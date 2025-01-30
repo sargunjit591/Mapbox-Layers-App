@@ -7,8 +7,6 @@ import androidx.core.content.ContextCompat
 import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.VectorDrawable
 import android.util.Log
 import android.view.LayoutInflater
@@ -25,45 +23,29 @@ import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.locationcomponent.location
 import android.view.animation.AnimationUtils
 import android.widget.Button
+import android.widget.EditText
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
-import androidx.lifecycle.lifecycleScope
-import com.example.mapapp.Database.GeoJsonRepository
-import com.example.mapapp.Database.GeoPackageRepository
 import com.example.mapapp.R
 import com.example.mapapp.ViewModels.LayerType
 import com.example.mapapp.ViewModels.MapLayer
 import com.example.mapapp.ViewModels.MapViewModel
-import com.example.mapapp.ViewModels.Results
+import com.example.mapapp.ViewModels.MapViewModelFactory
 import com.example.mapapp.databinding.ActivityMapBinding
 import com.mapbox.geojson.Feature
-import com.mapbox.geojson.FeatureCollection
-import com.mapbox.geojson.Point
-import com.mapbox.maps.extension.style.expressions.generated.Expression
-import com.mapbox.maps.extension.style.layers.addLayer
-import com.mapbox.maps.extension.style.layers.generated.SymbolLayer
-import com.mapbox.maps.extension.style.layers.properties.generated.IconAnchor
-import com.mapbox.maps.extension.style.sources.addSource
-import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
-import com.mapbox.maps.plugin.annotation.annotations
-import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
 import com.mapbox.maps.plugin.gestures.gestures
-import com.mapbox.maps.extension.style.layers.properties.generated.*
 import com.skydoves.colorpickerview.ColorPickerView
-import com.skydoves.colorpickerview.sliders.BrightnessSlideBar
-import com.skydoves.colorpickerview.listeners.ColorEnvelopeListener
 import com.skydoves.colorpickerview.listeners.ColorListener
-import kotlinx.coroutines.launch
 
 class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var spinner: Spinner
     private lateinit var mBinding: ActivityMapBinding
     private var selectedMarker: Feature? = null
-    private val viewModel: MapViewModel by viewModels()
     var isButtonPressed = false
-    val repo = GeoPackageRepository(this)
+    private val viewModel: MapViewModel by viewModels {
+        MapViewModelFactory(this)
+    }
 
     private val rotateOpen: Animation by lazy {
         AnimationUtils.loadAnimation(this, R.anim.rotate_open_anim)
@@ -98,63 +80,13 @@ class MapActivity : AppCompatActivity() {
             accessLocation()
         }
 
-
-        repo.initializeDatabase()
-
-
-        lifecycleScope.launch {
-            repo.loadAllLatLng().collect { result ->
-                when (result) {
-                    is Results.Loading -> {
-                        if (result.isLoading) {
-                            Log.d("GeoPackage", "Loading coordinates from database...")
-                        } else {
-                            Log.d("GeoPackage", "Loading completed.")
-                        }
-                    }
-                    is Results.Success -> {
-                        val latLngList = result.data ?: emptyList()
-
-                        if (latLngList.isNotEmpty()) {
-                            for ((lat, lng) in latLngList) {
-                                Log.d("GeoPackage", "Latitude: $lat, Longitude: $lng")
-                                viewModel.addMarker(lat, lng)
-                            }
-                        } else {
-                            Log.d("GeoPackage", "No coordinates found in the database.")
-                        }
-                    }
-                    is Results.Error -> {
-                        Log.e("GeoPackage", "Error loading LatLng: ${result.message}")
-                    }
-                }
-            }
-        }
-
-//        lifecycleScope.launch{
-//            viewModel.saveLatLngState.collect { state ->
-//                when (state) {
-//                    SaveLatLngState.IDLE -> {
-//                        Log.d("MapActivity", "Waiting for save operation...")
-//                    }
-//                    SaveLatLngState.IN_PROGRESS -> {
-//                        Log.d("MapActivity", "Saving LatLng...")
-//                    }
-//                    SaveLatLngState.SUCCESS -> {
-//                        Log.d("MapActivity", "LatLng saved successfully!")
-//                    }
-//                    SaveLatLngState.FAILURE -> {
-//                        Log.e("MapActivity", "Failed to save LatLng.")
-//                    }
-//                }
-//            }
-//        }
-
         mapView = findViewById(R.id.mapView)
 
         mapView.getMapboxMap().loadStyleUri(Style.MAPBOX_STREETS) {
             enableLocationComponent()
         }
+
+        viewModel.loadAllMarkers()
 
         spinner = findViewById(R.id.spinner)
 
@@ -223,7 +155,7 @@ class MapActivity : AppCompatActivity() {
 
             mBinding.point.setOnClickListener {
                 val mDialogView = LayoutInflater.from(this@MapActivity)
-                    .inflate(R.layout.alert_box1, null)
+                    .inflate(R.layout.alert_box_1, null)
 
                 val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
                 var selectedColor = 0
@@ -249,6 +181,9 @@ class MapActivity : AppCompatActivity() {
                     ).show()
                     mAlertDialog.dismiss()
                     MapLayer(LayerType.POINT,"A new point layer has been added")
+
+                    val layerName = mDialogView.findViewById<EditText>(R.id.etLayerName).text.toString().trim()
+                    viewModel.updateTableName(layerName,this@MapActivity)
                 }
 
                 mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
@@ -260,10 +195,9 @@ class MapActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        repo.closeDatabase()
+        viewModel.closeDatabase()
         Log.d("GeoPackage", "GeoPackage database closed")
     }
-
 
     private fun setVisibility(clicked: Boolean) {
         if(!clicked){
@@ -367,48 +301,13 @@ class MapActivity : AppCompatActivity() {
             if (isButtonPressed) {
                 if (selectedMarker == null) {
                     viewModel.addMarker(point.latitude(), point.longitude())
-                    lifecycleScope.launch {
-                        repo.saveLatLng(point.latitude(), point.longitude())
-                            .collect { result ->
-                                when (result) {
-                                    is Results.Loading -> {
-                                        Log.d("GeoPackage", "Saving LatLng... Loading: ${result.isLoading}")
-                                    }
-                                    is Results.Success -> {
-                                        Log.d("GeoPackage", "LatLng saved successfully!")
-                                    }
-                                    is Results.Error -> {
-                                        Log.e("GeoPackage", "Error saving LatLng: ${result.message}")
-                                    }
-                                }
-                            }
-                    }
                 }
             }
             true
         }
         mapView.gestures.addOnMapLongClickListener { point ->
-            lifecycleScope.launch {
-                Log.d("GeoPackage", "Deleting point at: ${point.latitude()}, ${point.longitude()}")
-
-                repo.deleteLatLng(point.latitude(), point.longitude()).collect { result ->
-                    when (result) {
-                        is Results.Loading -> {
-                            if (result.isLoading) {
-                                Log.d("GeoPackage", "Deleting marker...")
-                            } else {
-                                Log.d("GeoPackage", "Deletion process completed.")
-                            }
-                        }
-                        is Results.Success -> {
-                            Log.d("GeoPackage", "LatLng deleted successfully!")
-                            viewModel.deleteMarker(point.latitude(), point.longitude())
-                        }
-                        is Results.Error -> {
-                            Log.e("GeoPackage", "Error deleting LatLng: ${result.message}")
-                        }
-                    }
-                }
+            if (isButtonPressed) {
+                viewModel.deleteMarker(point.latitude(), point.longitude())
             }
             true
         }

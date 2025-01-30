@@ -2,7 +2,6 @@ package com.example.mapapp.Database
 
 import android.content.Context
 import android.util.Log
-import com.example.mapapp.ViewModels.MapState
 import com.example.mapapp.ViewModels.Results
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,14 +9,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import mil.nga.geopackage.BoundingBox
 import mil.nga.geopackage.GeoPackage
 import mil.nga.geopackage.GeoPackageFactory
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.geopackage.db.TableColumnKey
 import mil.nga.geopackage.features.columns.GeometryColumns
-import mil.nga.geopackage.features.user.FeatureDao
 import mil.nga.geopackage.features.user.FeatureRow
 import mil.nga.geopackage.features.user.FeatureTable
 import mil.nga.geopackage.features.user.FeatureTableMetadata
@@ -30,11 +27,11 @@ import java.sql.SQLException
 
 class GeoPackageRepository(private val context: Context) {
     private val gpkgName = "markers"
-    private val tableName = "latlng_points_100"
+    //private val tableName = "latlng_points_125"
     private var manager : GeoPackageManager? = null
     private var geoPackage : GeoPackage? = null
 
-    fun initializeDatabase() {
+    fun initializeDatabase(tableName: String) {
         manager = getGeoPackageManager(context)
         if (geoPackage == null) {
             geoPackage = manager!!.open(gpkgName)
@@ -42,7 +39,7 @@ class GeoPackageRepository(private val context: Context) {
 
         geoPackage?.let {
             CoroutineScope(Dispatchers.IO).launch {
-                createTableIfNeeded(it).collect { result ->
+                createTableIfNeeded(it, tableName).collect { result ->
                     when (result) {
                         is Results.Loading -> Log.d("GeoPackage", "Creating table... Loading: ${result.isLoading}")
                         is Results.Success -> Log.d("GeoPackage", "Feature table created successfully!")
@@ -65,7 +62,7 @@ class GeoPackageRepository(private val context: Context) {
         return manager!!
     }
 
-    fun saveLatLng(lat: Double, lng: Double): Flow<Results<Boolean>> = flow {
+    fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
 
         try {
@@ -95,7 +92,7 @@ class GeoPackageRepository(private val context: Context) {
         }
     }
 
-    fun loadAllLatLng(): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
+    fun loadAllLatLng(tableName: String): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
         emit(Results.Loading())
 
         val coordinates = mutableListOf<Pair<Double, Double>>()
@@ -133,7 +130,7 @@ class GeoPackageRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    fun deleteLatLng(lat: Double, lng: Double): Flow<Results<Boolean>> = flow<Results<Boolean>> {
+    fun deleteLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow<Results<Boolean>> {
         emit(Results.Loading())
 
         try {
@@ -187,7 +184,7 @@ class GeoPackageRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    fun createTableIfNeeded(geoPackage: GeoPackage): Flow<Results<Boolean>> = flow {
+    fun createTableIfNeeded(geoPackage: GeoPackage, tableName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
 
         try {
@@ -199,8 +196,8 @@ class GeoPackageRepository(private val context: Context) {
                 return@flow
             }
 
-            val geometryColumns = GeometryColumns().apply {
-                val column = TableColumnKey(this@GeoPackageRepository.tableName, "geom")
+            val GeometryColumnss = GeometryColumns().apply {
+                val column = TableColumnKey(tableName, "geom")
                 id = column
                 geometryType = GeometryType.POINT
                 z = 0.toByte()
@@ -210,11 +207,11 @@ class GeoPackageRepository(private val context: Context) {
             val srs = geoPackage.spatialReferenceSystemDao
                 .getOrCreateFromEpsg(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM.toLong())
 
-            geometryColumns.srs = srs
+            GeometryColumnss.srs = srs
 
             val created: FeatureTable? = geoPackage.createFeatureTable(
                 FeatureTableMetadata.create(
-                    geometryColumns,
+                    GeometryColumnss,
                     BoundingBox.worldWGS84()
                 )
             )

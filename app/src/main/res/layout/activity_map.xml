@@ -11,10 +11,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/spinner"
         android:layout_marginTop="55dp"/>
-<!--        app:mapbox_cameraTargetLat="12.887378551452251"-->
-<!--        app:mapbox_cameraTargetLng="77.73712565642215"-->
-<!--        app:mapbox_cameraZoom="20.0"-->
-<!--        android:layout_marginTop="55dp"/>-->
 
     <Spinner
         android:id="@+id/spinner"
