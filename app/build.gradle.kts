@@ -64,6 +64,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation("com.google.android.material:material:1.9.0")
     implementation("com.github.skydoves:colorpickerview:2.2.4")
-    implementation("mil.nga.geopackage.map:geopackage-android-map:6.7.4")
-    implementation("mil.nga.geopackage:geopackage-android:6.7.4")
+    implementation("mil.nga.geopackage.map:geopackage-android-map:6.6.0")
+    implementation("mil.nga.geopackage:geopackage-android:6.6.0")
 }

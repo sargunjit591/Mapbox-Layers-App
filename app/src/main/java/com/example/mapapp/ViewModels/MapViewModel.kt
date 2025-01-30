@@ -20,18 +20,21 @@ import java.io.File
 class MapViewModel : ViewModel() {
     private val _mapState = MutableStateFlow(MapState())
     val mapState: StateFlow<MapState> = _mapState
-    private lateinit var geoJsonSource: GeoJsonSource
     private val markerFeatures = mutableListOf<Feature>()
     private var selectedMarker: Feature? = null
+    private val geoJsonSource: GeoJsonSource by lazy {
+        GeoJsonSource.Builder("marker-source")
+            .featureCollection(FeatureCollection.fromFeatures(markerFeatures))
+            .build()
+    }
 
     fun updateStyle(styleUri: String) {
         _mapState.update { it.copy(currentStyle = styleUri) }
     }
 
+//    val saveLatLngState: StateFlow<SaveLatLngState> = SaveLatLngStateManager.saveLatLngState
+
     fun setupGeoJsonSource(style: Style) {
-        geoJsonSource = GeoJsonSource.Builder("marker-source")
-            .featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-            .build()
         style.addSource(geoJsonSource)
     }
 
