@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import android.Manifest
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.VectorDrawable
@@ -26,6 +27,7 @@ import android.widget.Button
 import android.widget.EditText
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import com.example.mapapp.R
 import com.example.mapapp.ViewModels.LayerType
 import com.example.mapapp.ViewModels.MapLayer
@@ -43,6 +45,7 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mBinding: ActivityMapBinding
     private var selectedMarker: Feature? = null
     var isButtonPressed = false
+    private lateinit var layerSpinner: Spinner
     private val viewModel: MapViewModel by viewModels {
         MapViewModelFactory(this)
     }
@@ -87,6 +90,21 @@ class MapActivity : AppCompatActivity() {
         }
 
         viewModel.loadAllMarkers()
+        viewModel.loadLayers()
+
+        lifecycleScope.launchWhenStarted {
+            viewModel.layers.collect { layers ->
+                if (layers.isNotEmpty()) {
+                    val sharedPref = getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
+                    sharedPref.edit().putString("LAST_TABLE_NAME", layers.first()).apply()
+
+                    viewModel.updateTableName(layers.first())
+                    viewModel.loadAllMarkers()
+                }
+            }
+        }
+
+        setupLayerSelection()
 
         spinner = findViewById(R.id.spinner)
 
@@ -154,10 +172,12 @@ class MapActivity : AppCompatActivity() {
             }
 
             mBinding.point.setOnClickListener {
+
                 val mDialogView = LayoutInflater.from(this@MapActivity)
                     .inflate(R.layout.alert_box_1, null)
 
                 val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
+                val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
                 var selectedColor = 0
 
                 colorPickerView.setColorListener(object : ColorListener {
@@ -180,10 +200,16 @@ class MapActivity : AppCompatActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                     mAlertDialog.dismiss()
-                    MapLayer(LayerType.POINT,"A new point layer has been added")
+                    MapLayer(LayerType.POINT, "A new point layer has been added")
 
-                    val layerName = mDialogView.findViewById<EditText>(R.id.etLayerName).text.toString().trim()
-                    viewModel.updateTableName(layerName,this@MapActivity)
+                    val layerName = layerNameInput.text.toString().trim()
+                    if (layerName.isNotEmpty()) {
+                        viewModel.createNewPointLayer(layerName)
+                        viewModel.updateTableName(layerName)
+                        Toast.makeText(this@MapActivity, "New Layer Created: $layerName", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MapActivity, "Layer name cannot be empty!", Toast.LENGTH_SHORT).show()
+                    }
                 }
 
                 mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
@@ -200,57 +226,63 @@ class MapActivity : AppCompatActivity() {
     }
 
     private fun setVisibility(clicked: Boolean) {
-        if(!clicked){
-            mBinding.point.visibility = View.VISIBLE
-            mBinding.line.visibility = View.VISIBLE
-            mBinding.circle.visibility = View.VISIBLE
-            mBinding.polygon.visibility = View.VISIBLE
-            mBinding.save.visibility = View.VISIBLE
-            mBinding.load.visibility = View.VISIBLE
-        } else {
-            mBinding.point.visibility = View.INVISIBLE
-            mBinding.line.visibility = View.INVISIBLE
-            mBinding.circle.visibility = View.INVISIBLE
-            mBinding.polygon.visibility = View.INVISIBLE
-            mBinding.save.visibility = View.INVISIBLE
+        mBinding.apply {
+            if(!clicked){
+                point.visibility = View.VISIBLE
+                line.visibility = View.VISIBLE
+                circle.visibility = View.VISIBLE
+                polygon.visibility = View.VISIBLE
+                save.visibility = View.VISIBLE
+                load.visibility = View.VISIBLE
+            } else {
+                point.visibility = View.INVISIBLE
+                line.visibility = View.INVISIBLE
+                circle.visibility = View.INVISIBLE
+                polygon.visibility = View.INVISIBLE
+                save.visibility = View.INVISIBLE
+            }
         }
     }
 
     private fun setAnimation(clicked: Boolean) {
-        if(!clicked){
-            mBinding.point.startAnimation(fromBottom)
-            mBinding.line.startAnimation(fromBottom)
-            mBinding.circle.startAnimation(fromBottom)
-            mBinding.polygon.startAnimation(fromBottom)
-            mBinding.save.startAnimation(fromBottom)
-            mBinding.load.startAnimation(fromBottom)
-            mBinding.add.startAnimation(rotateOpen)
-        } else {
-            mBinding.point.startAnimation(toBottom)
-            mBinding.line.startAnimation(toBottom)
-            mBinding.circle.startAnimation(toBottom)
-            mBinding.polygon.startAnimation(toBottom)
-            mBinding.save.startAnimation(toBottom)
-            mBinding.load.startAnimation(toBottom)
-            mBinding.add.startAnimation(rotateClose)
+        mBinding.apply {
+            if(!clicked){
+                point.startAnimation(fromBottom)
+                line.startAnimation(fromBottom)
+                circle.startAnimation(fromBottom)
+                polygon.startAnimation(fromBottom)
+                save.startAnimation(fromBottom)
+                load.startAnimation(fromBottom)
+                add.startAnimation(rotateOpen)
+            } else {
+                point.startAnimation(toBottom)
+                line.startAnimation(toBottom)
+                circle.startAnimation(toBottom)
+                polygon.startAnimation(toBottom)
+                save.startAnimation(toBottom)
+                load.startAnimation(toBottom)
+                add.startAnimation(rotateClose)
+            }
         }
     }
 
     private fun setClickable(clicked: Boolean) {
-        if (clicked) {
-            mBinding.point.isClickable = false
-            mBinding.line.isClickable = false
-            mBinding.circle.isClickable = false
-            mBinding.polygon.isClickable = false
-            mBinding.save.isClickable = false
-            mBinding.load.isClickable = false
-        } else {
-            mBinding.point.isClickable = true
-            mBinding.line.isClickable = true
-            mBinding.circle.isClickable = true
-            mBinding.polygon.isClickable = true
-            mBinding.save.isClickable = true
-            mBinding.load.isClickable = true
+        mBinding.apply {
+            if (clicked) {
+                point.isClickable = false
+                line.isClickable = false
+                circle.isClickable = false
+                polygon.isClickable = false
+                save.isClickable = false
+                load.isClickable = false
+            } else {
+                point.isClickable = true
+                line.isClickable = true
+                circle.isClickable = true
+                polygon.isClickable = true
+                save.isClickable = true
+                load.isClickable = true
+            }
         }
     }
 
@@ -310,6 +342,34 @@ class MapActivity : AppCompatActivity() {
                 viewModel.deleteMarker(point.latitude(), point.longitude())
             }
             true
+        }
+    }
+
+    private fun setupLayerSelection() {
+        val layerSpinner = findViewById<Spinner>(R.id.layerSpinner)
+
+        lifecycleScope.launchWhenStarted {
+            viewModel.layers.collect { layers ->
+                val adapter = ArrayAdapter(
+                    this@MapActivity,
+                    android.R.layout.simple_spinner_item,
+                    layers
+                )
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                layerSpinner.adapter = adapter
+            }
+        }
+
+        layerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selectedLayer = layerSpinner.selectedItem.toString()
+                viewModel.setSelectedLayer(selectedLayer)
+
+                viewModel.updateTableName(selectedLayer)
+                viewModel.loadAllMarkers()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 }

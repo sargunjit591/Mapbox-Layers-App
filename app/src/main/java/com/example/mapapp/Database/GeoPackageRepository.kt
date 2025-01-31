@@ -27,9 +27,9 @@ import java.sql.SQLException
 
 class GeoPackageRepository(private val context: Context) {
     private val gpkgName = "markers"
-    //private val tableName = "latlng_points_125"
     private var manager : GeoPackageManager? = null
     private var geoPackage : GeoPackage? = null
+    private val layers = mutableListOf<String>()
 
     fun initializeDatabase(tableName: String) {
         manager = getGeoPackageManager(context)
@@ -228,6 +228,70 @@ class GeoPackageRepository(private val context: Context) {
         } finally {
             emit(Results.Loading(false))
         }
+    }
+
+    fun createPointLayer(layerName: String): Flow<Results<Boolean>> = flow {
+        emit(Results.Loading())
+
+        try {
+            if (geoPackage?.isFeatureTable(layerName) == true) {
+                emit(Results.Success(true))
+                return@flow
+            }
+
+            val geometryColumns = GeometryColumns().apply {
+                val column = TableColumnKey(layerName, "geom")
+                id = column
+                geometryType = GeometryType.POINT
+            }
+
+            val srs = geoPackage?.spatialReferenceSystemDao
+                ?.getOrCreateFromEpsg(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM.toLong())
+
+            geometryColumns.srs = srs
+
+            val created = geoPackage?.createFeatureTable(
+                FeatureTableMetadata.create(geometryColumns, BoundingBox.worldWGS84())
+            )
+
+            if (created != null) {
+                layers.add(layerName)
+                emit(Results.Success(true))
+            } else {
+                emit(Results.Error("Failed to create point layer"))
+            }
+
+        } catch (e: SQLException) {
+            emit(Results.Error("SQL Exception: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }
+
+    fun loadLayers(): Flow<Results<List<String>>> = flow {
+        emit(Results.Loading<List<String>>())
+
+        try {
+            geoPackage?.let { gpkg ->
+                val tables = gpkg.featureTables
+                layers.clear()
+                layers.addAll(tables)
+
+                Log.d("GeoPackage", "Available layers: $tables")
+                emit(Results.Success(tables))
+            } ?: run {
+                Log.e("GeoPackage", "GeoPackage is not initialized")
+                emit(Results.Error<List<String>>("GeoPackage is not initialized"))
+            }
+        } catch (e: Exception) {
+            Log.e("GeoPackage", "Error loading layers: ${e.message}", e)
+            emit(Results.Error<List<String>>("Error loading layers: ${e.message}"))
+        }
+    }.flowOn(Dispatchers.IO)
+
+
+    fun getLayers(): List<String> {
+        return layers
     }
 
     fun closeDatabase() {

@@ -29,6 +29,12 @@ class MapViewModel(context: Context) : ViewModel() {
     private val _latLngList = MutableStateFlow<List<Pair<Double, Double>>>(emptyList())
     val latLngList: StateFlow<List<Pair<Double, Double>>> = _latLngList
 
+    private val _layers = MutableStateFlow<List<String>>(emptyList())
+    val layers: StateFlow<List<String>> = _layers
+
+    private val _selectedLayer = MutableStateFlow<String>("default_layer")
+    val selectedLayer: StateFlow<String> = _selectedLayer
+
     private val geoJsonSource: GeoJsonSource by lazy {
         GeoJsonSource.Builder("marker-source")
             .featureCollection(FeatureCollection.fromFeatures(markerFeatures))
@@ -49,15 +55,11 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
 
-    fun updateTableName(layerName: String, context: Context) {
+    fun updateTableName(layerName: String) {
         tableName = layerName
         Log.d("MapViewModel", "Table name updated: $tableName")
 
-        val sharedPref = context.getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
-        sharedPref.edit().putString("LAST_TABLE_NAME", layerName).apply()
-
         repo.initializeDatabase(tableName!!)
-
         loadAllMarkers()
     }
 
@@ -176,6 +178,41 @@ class MapViewModel(context: Context) : ViewModel() {
     fun isNearLocation(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Boolean {
         val threshold = 0.0001
         return (Math.abs(lat1 - lat2) < threshold && Math.abs(lng1 - lng2) < threshold)
+    }
+
+    fun createNewPointLayer(layerName: String) {
+        viewModelScope.launch {
+            repo.createPointLayer(layerName).collect { result ->
+                if (result is Results.Success) {
+                    loadLayers()
+                }
+            }
+        }
+    }
+
+    fun setSelectedLayer(layerName: String) {
+        _selectedLayer.value = layerName
+    }
+
+    fun loadLayers() {
+        viewModelScope.launch {
+            repo.loadLayers().collect { result ->
+                when (result) {
+                    is Results.Loading -> Log.d("GeoPackage", "⌛ Loading layers...")
+                    is Results.Success -> {
+                        _layers.value = result.data ?: emptyList()
+                        Log.d("GeoPackage", "Loaded layers: ${_layers.value}")
+
+                        if (_layers.value.isNotEmpty()) {
+                            setSelectedLayer(_layers.value.first())
+                            updateTableName(_layers.value.first())
+                            loadAllMarkers()
+                        }
+                    }
+                    is Results.Error -> Log.e("GeoPackage", "Error loading layers: ${result.message}")
+                }
+            }
+        }
     }
 
     fun closeDatabase() {
