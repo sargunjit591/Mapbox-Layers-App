@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mil.nga.geopackage.BoundingBox
 import mil.nga.geopackage.GeoPackage
 import mil.nga.geopackage.GeoPackageFactory
@@ -52,6 +53,17 @@ class GeoPackageRepository(private val context: Context) {
         }
     }
 
+    private fun getOrCreateGeoPackage(): GeoPackage {
+        if (geoPackage == null) {
+            manager = GeoPackageFactory.getManager(context)
+            if (!manager!!.exists(gpkgName)) {
+                manager!!.create(gpkgName)
+            }
+            geoPackage = manager!!.open(gpkgName)
+        }
+        return geoPackage!!
+    }
+
     private fun getGeoPackageManager(context: Context): GeoPackageManager {
         manager = GeoPackageFactory.getManager(context)
 
@@ -64,7 +76,7 @@ class GeoPackageRepository(private val context: Context) {
 
     fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
-
+        val gpkg = getOrCreateGeoPackage()
         try {
             Log.d("GeoPackage", "Saving LatLng ($lat, $lng) to table: $tableName")
 
@@ -94,7 +106,7 @@ class GeoPackageRepository(private val context: Context) {
 
     fun loadAllLatLng(tableName: String): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
         emit(Results.Loading())
-
+        val gpkg = getOrCreateGeoPackage()
         val coordinates = mutableListOf<Pair<Double, Double>>()
 
         try {
@@ -272,26 +284,39 @@ class GeoPackageRepository(private val context: Context) {
         emit(Results.Loading<List<String>>())
 
         try {
-            geoPackage?.let { gpkg ->
-                val tables = gpkg.featureTables
-                layers.clear()
-                layers.addAll(tables)
-
-                Log.d("GeoPackage", "Available layers: $tables")
-                emit(Results.Success(tables))
-            } ?: run {
-                Log.e("GeoPackage", "GeoPackage is not initialized")
-                emit(Results.Error<List<String>>("GeoPackage is not initialized"))
-            }
+            manager = getGeoPackageManager(context)
+            geoPackage = manager!!.open(gpkgName)
+            val tables = geoPackage!!.featureTables
+            layers.clear()
+            layers.addAll(tables)
+            Log.d("GeoPackage", "Available layers: $tables")
+            emit(Results.Success(tables))
         } catch (e: Exception) {
             Log.e("GeoPackage", "Error loading layers: ${e.message}", e)
-            emit(Results.Error<List<String>>("Error loading layers: ${e.message}"))
+            emit(Results.Error("Error loading layers: ${e.message}"))
         }
     }.flowOn(Dispatchers.IO)
 
+    suspend fun getPointId(lat: Double, lng: Double, tableName: String): Long {
+        return withContext(Dispatchers.IO) {
+            var id = -1L
 
-    fun getLayers(): List<String> {
-        return layers
+            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
+                val allRows = featureDao.queryForAll() // Query all rows from the table
+
+                for (row in allRows) {
+                    val geometryData = row.geometry
+                    if (geometryData != null) {
+                        val geometry = geometryData.geometry
+                        if (geometry is Point && geometry.y == lat && geometry.x == lng) {
+                            id = row.id // Retrieve the primary key of the row
+                            break
+                        }
+                    }
+                }
+            }
+            id
+        }
     }
 
     fun closeDatabase() {

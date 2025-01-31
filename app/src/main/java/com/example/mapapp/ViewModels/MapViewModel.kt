@@ -1,6 +1,7 @@
 package com.example.mapapp.ViewModels
 
 import android.content.Context
+import android.graphics.Color
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,7 +10,10 @@ import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
+import com.mapbox.maps.extension.style.expressions.dsl.generated.literal
+import com.mapbox.maps.extension.style.expressions.generated.Expression
 import com.mapbox.maps.extension.style.layers.addLayer
+import com.mapbox.maps.extension.style.layers.addLayerAbove
 import com.mapbox.maps.extension.style.layers.generated.SymbolLayer
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
@@ -32,8 +36,41 @@ class MapViewModel(context: Context) : ViewModel() {
     private val _layers = MutableStateFlow<List<String>>(emptyList())
     val layers: StateFlow<List<String>> = _layers
 
-    private val _selectedLayer = MutableStateFlow<String>("default_layer")
+    private val _selectedLayer = MutableStateFlow<String>("")
     val selectedLayer: StateFlow<String> = _selectedLayer
+
+    private val _selectedLayers = MutableStateFlow<MutableSet<String>>(mutableSetOf())
+    val selectedLayers: StateFlow<Set<String>> = _selectedLayers
+
+    private val _activeLayer = MutableStateFlow<String?>(null)
+    val activeLayer: StateFlow<String?> = _activeLayer
+
+    fun getSelectedLayers(): Set<String> = _selectedLayers.value
+
+    fun updateVisibleLayers(layers: Set<String>) {
+        _selectedLayers.value = layers.toMutableSet()
+        loadMarkersForVisibleLayers()
+        loadAllMarkers()
+    }
+
+    fun loadMarkersForVisibleLayers() {
+        viewModelScope.launch {
+            val markers = mutableListOf<Feature>()
+            for (layer in _selectedLayers.value) {
+                repo.loadAllLatLng(layer).collect { result ->
+                    if (result is Results.Success) {
+                        result.data?.forEach { (lat, lng) ->
+                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+                                addStringProperty("icon", "ic_point2")
+                            }
+                            markers.add(feature)
+                        }
+                    }
+                }
+            }
+            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markers))
+        }
+    }
 
     private val geoJsonSource: GeoJsonSource by lazy {
         GeoJsonSource.Builder("marker-source")
@@ -42,24 +79,23 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     init {
-        val sharedPref = context.getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
-        tableName = sharedPref.getString("LAST_TABLE_NAME", null)
-
-        if (tableName != null) {
-            Log.d("MapViewModel", "Last used table name: $tableName")
-            repo.initializeDatabase(tableName!!)
+//        val sharedPref = context.getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
+//        tableName = sharedPref.getString("LAST_TABLE_NAME", null)
+//
+//        if (tableName != null) {
+//            Log.d("MapViewModel", "Last used table name: $tableName")
+//            repo.initializeDatabase(tableName!!)
             loadAllMarkers()
-        } else {
-            Log.d("MapViewModel", "No previously used table found")
-        }
+//        } else {
+//            Log.d("MapViewModel", "No previously used table found")
+//        }
     }
 
 
     fun updateTableName(layerName: String) {
         tableName = layerName
-        Log.d("MapViewModel", "Table name updated: $tableName")
-
-        repo.initializeDatabase(tableName!!)
+        Log.d("MapViewModel", "Initializing database with table: $layerName")
+        repo.initializeDatabase(layerName)
         loadAllMarkers()
     }
 
@@ -73,35 +109,57 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     fun setupSymbolLayer(style: Style) {
-        val symbolLayer = SymbolLayer("marker-layer", "marker-source")
-        symbolLayer.iconImage("{icon}")
-        symbolLayer.iconAllowOverlap(true)
-        symbolLayer.iconIgnorePlacement(true)
-        //symbolLayer.iconColor("{color}")
+//        style.removeStyleLayer("text-layer")
+//        style.removeStyleLayer("marker-layer")
+
+        val symbolLayer = SymbolLayer("marker-layer", "marker-source").apply {
+            iconImage("{icon}")
+            iconAllowOverlap(true)
+            iconIgnorePlacement(true)
+        }
+
+        val textLayer = SymbolLayer("text-layer", "marker-source").apply {
+            textField(Expression.get("point_id"))
+            textSize(literal(12.0))
+            textColor(Color.BLACK)
+            textHaloColor(Color.WHITE)
+            textHaloWidth(literal(1.5))
+            textAllowOverlap(true)
+            textIgnorePlacement(true)
+            textOffset(literal(listOf(0.0, -2.0)))
+        }
 
         style.addLayer(symbolLayer)
+        style.addLayerAbove(textLayer, "marker-layer")
     }
 
     fun addMarker(lat: Double, lng: Double) {
+        val activeTable = _activeLayer.value ?: tableName
+        if (activeTable.isNullOrEmpty()) {
+            Log.e("GeoPackage", "❌ No active layer selected for adding points!")
+            return
+        }
+
+        val pointId = System.currentTimeMillis()
         val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
             addStringProperty("icon", "ic_point2")
-            //addStringProperty("color", "#FF0000")
-        }
+            addStringProperty("point_id", "${tableName ?: "default"} - Point $pointId")        }
 
         markerFeatures.add(feature)
         geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
+
+        Log.d("GeoPackage", "✅ Adding Marker to Map: ($lat, $lng) in $activeTable")
 
         viewModelScope.launch {
             tableName?.let {
                 repo.saveLatLng(lat, lng, it).collect { result ->
                     when (result) {
-                        is Results.Loading -> Log.d("GeoPackage", "Saving LatLng... ${result.isLoading}")
                         is Results.Success -> {
-                            Log.d("GeoPackage", "LatLng saved successfully!")
-        //                        loadAllMarkers()
+                            loadAllMarkers()
+                            Log.d("GeoPackage", "✔ Point Saved in DB: ($lat, $lng)")
                         }
-
-                        is Results.Error -> Log.e("GeoPackage", "Error saving LatLng: ${result.message}")
+                        is Results.Error -> Log.e("GeoPackage", "❌ Error saving point: ${result.message}")
+                        is Results.Loading -> {}
                     }
                 }
             }
@@ -110,38 +168,27 @@ class MapViewModel(context: Context) : ViewModel() {
 
     fun loadAllMarkers() {
         viewModelScope.launch {
-            val table = tableName
-            if (table.isNullOrEmpty()) {
-                Log.e("GeoPackage", "Table name is not set! Cannot load markers.")
-                return@launch
-            }
+            val selected = _selectedLayers.value
+            val selectedMarkers = mutableListOf<Feature>()
 
-            Log.d("GeoPackage", "Loading markers from table: $table")
-
-            repo.loadAllLatLng(table).collect { result ->
-                when (result) {
-                    is Results.Loading -> Log.d("GeoPackage", "⌛ Loading LatLng...")
-                    is Results.Success -> {
-                        Log.d("GeoPackage", "Loaded ${result.data?.size ?: 0} markers")
-
-                        _latLngList.value = result.data ?: emptyList()
-
-                        markerFeatures.clear()
-
-                        for ((lat, lng) in _latLngList.value) {
+            for (layer in selected) {
+                repo.loadAllLatLng(layer).collect { result ->
+                    if (result is Results.Success) {
+                        result.data?.forEachIndexed { index, (lat, lng) ->
+                            val pointId = repo.getPointId(lat, lng, layer)
                             val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
                                 addStringProperty("icon", "ic_point2")
-                            }
-                            markerFeatures.add(feature)
+                                addStringProperty("point_id", "$layer - Point $pointId")                             }
+                            selectedMarkers.add(feature)
                         }
-                        geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-
-                        Log.d("GeoPackage", "Markers successfully updated on the map")
                     }
-
-                    is Results.Error -> Log.e("GeoPackage", "Error loading LatLng: ${result.message}")
                 }
             }
+
+            markerFeatures.clear()
+            markerFeatures.addAll(selectedMarkers)
+            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
+            Log.d("GeoPackage", "✅ Updated markers for selected layers: $selected")
         }
     }
 
@@ -185,6 +232,9 @@ class MapViewModel(context: Context) : ViewModel() {
             repo.createPointLayer(layerName).collect { result ->
                 if (result is Results.Success) {
                     loadLayers()
+                    _selectedLayer.value = layerName
+                    updateTableName(layerName)
+                    loadAllMarkers()
                 }
             }
         }
@@ -202,12 +252,6 @@ class MapViewModel(context: Context) : ViewModel() {
                     is Results.Success -> {
                         _layers.value = result.data ?: emptyList()
                         Log.d("GeoPackage", "Loaded layers: ${_layers.value}")
-
-                        if (_layers.value.isNotEmpty()) {
-                            setSelectedLayer(_layers.value.first())
-                            updateTableName(_layers.value.first())
-                            loadAllMarkers()
-                        }
                     }
                     is Results.Error -> Log.e("GeoPackage", "Error loading layers: ${result.message}")
                 }

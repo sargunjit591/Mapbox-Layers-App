@@ -45,7 +45,6 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mBinding: ActivityMapBinding
     private var selectedMarker: Feature? = null
     var isButtonPressed = false
-    private lateinit var layerSpinner: Spinner
     private val viewModel: MapViewModel by viewModels {
         MapViewModelFactory(this)
     }
@@ -85,20 +84,31 @@ class MapActivity : AppCompatActivity() {
 
         mapView = findViewById(R.id.mapView)
 
-        mapView.getMapboxMap().loadStyleUri(Style.MAPBOX_STREETS) {
+        mapView.getMapboxMap().loadStyleUri(Style.STANDARD) {
             enableLocationComponent()
         }
 
         viewModel.loadAllMarkers()
         viewModel.loadLayers()
 
-        lifecycleScope.launchWhenStarted {
-            viewModel.layers.collect { layers ->
-                if (layers.isNotEmpty()) {
-                    val sharedPref = getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
-                    sharedPref.edit().putString("LAST_TABLE_NAME", layers.first()).apply()
+//        lifecycleScope.launchWhenStarted {
+//            viewModel.layers.collect { layers ->
+//                if (layers.isNotEmpty()) {
+//                    val sharedPref = getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
+//                    sharedPref.edit().putString("LAST_TABLE_NAME", layers.first()).apply()
+//
+//                    viewModel.updateTableName(layers.first())
+//                    viewModel.loadAllMarkers()
+//                }
+//            }
+//        }
 
-                    viewModel.updateTableName(layers.first())
+        // Inside onCreate()
+        lifecycleScope.launchWhenStarted {
+            viewModel.selectedLayer.collect { layerName ->
+                layerName.let {
+                    Log.d("MapActivity", "Active layer updated to: $it")
+                    viewModel.updateTableName(it)
                     viewModel.loadAllMarkers()
                 }
             }
@@ -346,30 +356,39 @@ class MapActivity : AppCompatActivity() {
     }
 
     private fun setupLayerSelection() {
-        val layerSpinner = findViewById<Spinner>(R.id.layerSpinner)
+        val btnSelectLayers = findViewById<Button>(R.id.btnSelectLayers)
 
-        lifecycleScope.launchWhenStarted {
-            viewModel.layers.collect { layers ->
-                val adapter = ArrayAdapter(
-                    this@MapActivity,
-                    android.R.layout.simple_spinner_item,
-                    layers
-                )
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                layerSpinner.adapter = adapter
+        btnSelectLayers.setOnClickListener {
+            lifecycleScope.launchWhenStarted {
+                viewModel.layers.collect { layers ->
+                    if (layers.isNotEmpty()) {
+                        showLayerSelectionDialog(layers)
+                    } else {
+                        Toast.makeText(this@MapActivity, "No layers available", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
+    }
 
-        layerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val selectedLayer = layerSpinner.selectedItem.toString()
-                viewModel.setSelectedLayer(selectedLayer)
+    private fun showLayerSelectionDialog(layers: List<String>) {
+        val selectedLayers = viewModel.getSelectedLayers().toMutableSet()
+        val layerArray = layers.toTypedArray()
+        val checkedItems = layers.map { it in selectedLayers }.toBooleanArray()
 
-                viewModel.updateTableName(selectedLayer)
-                viewModel.loadAllMarkers()
+        AlertDialog.Builder(this)
+            .setTitle("Select Layers to View")
+            .setMultiChoiceItems(layerArray, checkedItems) { _, which, isChecked ->
+                if (isChecked) {
+                    selectedLayers.add(layerArray[which])
+                } else {
+                    selectedLayers.remove(layerArray[which])
+                }
             }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+            .setPositiveButton("Apply") { _, _ ->
+                viewModel.updateVisibleLayers(selectedLayers)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 }
