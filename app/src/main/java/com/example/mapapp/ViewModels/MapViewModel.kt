@@ -82,24 +82,25 @@ class MapViewModel(context: Context) : ViewModel() {
         }
     }
 
-//    fun loadMarkersForVisibleLayers() {
-//        viewModelScope.launch {
-//            val markers = mutableListOf<Feature>()
-//            for (layer in _mapState.value.selectedLayers) {
-//                repo.loadAllLatLng(layer).collect { result ->
-//                    if (result is Results.Success) {
-//                        result.data?.forEach { (lat, lng) ->
-//                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
-//                                addStringProperty("icon", "ic_point2")
-//                            }
-//                            markers.add(feature)
-//                        }
-//                    }
-//                }
-//            }
-//            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markers))
-//        }
-//    }
+    fun loadMarkersForVisibleLayers() {
+        viewModelScope.launch {
+            val markers = mutableListOf<Feature>()
+            val visibleLayers = _mapState.value.layers.values.filter { it.isVisible }
+            for (layer in visibleLayers) {
+                repo.loadAllLatLng(layer.id).collect { result ->
+                    if (result is Results.Success) {
+                        result.data?.forEach { (lat, lng) ->
+                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+                                addStringProperty("icon", "ic_point2")
+                            }
+                            markers.add(feature)
+                        }
+                    }
+                }
+            }
+            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markers))
+        }
+    }
 
     private val geoJsonSource: GeoJsonSource by lazy {
         GeoJsonSource.Builder("marker-source")
@@ -112,21 +113,6 @@ class MapViewModel(context: Context) : ViewModel() {
 //            .featureCollection(FeatureCollection.fromFeatures(emptyArray()))
 //            .build()
 //    }
-
-//
-//    init {
-//        loadAllMarkers()
-//        loadLayers()
-//    }
-
-
-//    fun updateTableName(layerName: String) {
-//        tableName = layerName
-//        Log.d("MapViewModel", "Initializing database with table: $layerName")
-//        repo.initializeDatabase(layerName)
-//        //loadAllMarkers()
-//    }
-
 
     fun updateStyle(styleUri: String) {
         _mapState.update { it.copy(currentStyle = styleUri) }
@@ -161,65 +147,63 @@ class MapViewModel(context: Context) : ViewModel() {
         style.addLayerAbove(textLayer, "marker-layer")
     }
 
-//    fun addMarker(lat: Double, lng: Double) {
-//        val activeTable = _mapState.value.activeLayer ?: tableName
-//        if (activeTable.isNullOrEmpty()) {
-//            Log.e("GeoPackage", "❌ No active layer selected for adding points!")
-//            return
-//        }
-//
-//        val pointId = System.currentTimeMillis()
-//        val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
-//            addStringProperty("icon", "ic_point2")
-//            addStringProperty("point_id", "${tableName ?: "default"} - Point $pointId")        }
-//
-//        markerFeatures.add(feature)
-//        geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-//
-//        Log.d("GeoPackage", "✅ Adding Marker to Map: ($lat, $lng) in $activeTable")
-//
-//        viewModelScope.launch {
-//            tableName?.let {
-//                repo.saveLatLng(lat, lng, it).collect { result ->
-//                    when (result) {
-//                        is Results.Success -> {
-//                            loadAllMarkers()
-//                            Log.d("GeoPackage", "✔ Point Saved in DB: ($lat, $lng)")
-//                        }
-//                        is Results.Error -> Log.e("GeoPackage", "❌ Error saving point: ${result.message}")
-//                        is Results.Loading -> {}
-//                    }
-//                }
-//            }
-//        }
-//    }
-//
-//    fun loadAllMarkers() {
-//        viewModelScope.launch {
-//            val selected = _mapState.value.selectedLayers
-//            val selectedMarkers = mutableListOf<Feature>()
-//
-//            for (layer in selected) {
-//                repo.loadAllLatLng(layer).collect { result ->
-//                    if (result is Results.Success) {
-//                        result.data?.forEachIndexed { index, (lat, lng) ->
-//                            val pointId = repo.getPointId(lat, lng, layer)
-//                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
-//                                addStringProperty("icon", "ic_point2")
-//                                addStringProperty("point_id", "$layer - Point $pointId")                             }
-//                            selectedMarkers.add(feature)
-//                        }
-//                    }
-//                }
-//            }
-//
-//            markerFeatures.clear()
-//            markerFeatures.addAll(selectedMarkers)
-//            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-//            Log.d("GeoPackage", "✅ Updated markers for selected layers: $selected")
-//        }
-//    }
-//
+    fun addMarker(lat: Double, lng: Double) {
+        val activeLayer = _mapState.value.activeLayer
+        if (activeLayer == null || activeLayer.id.isEmpty()) {
+            Log.e("GeoPackage", "❌ No active layer selected for adding points!")
+            return
+        }
+        val tableName = activeLayer.id
+
+        val pointId = System.currentTimeMillis()
+        val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+            addStringProperty("icon", "ic_point2")
+            addStringProperty("point_id", "$tableName - Point $pointId")
+        }
+
+        markerFeatures.add(feature)
+        geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
+
+        Log.d("GeoPackage", "✅ Adding Marker to Map: ($lat, $lng) in $tableName")
+
+        viewModelScope.launch {
+            repo.saveLatLng(lat, lng, tableName).collect { result ->
+                when (result) {
+                    is Results.Success -> {
+                        loadAllMarkers()
+                        Log.d("GeoPackage", "✔ Point Saved in DB: ($lat, $lng)")
+                    }
+                    is Results.Error -> Log.e("GeoPackage", "❌ Error saving point: ${result.message}")
+                    is Results.Loading -> { }
+                }
+            }
+        }
+    }
+
+    fun loadAllMarkers() {
+        viewModelScope.launch {
+            val selectedMarkers = mutableListOf<Feature>()
+            val visibleLayers = _mapState.value.layers.values.filter { it.isVisible }
+            for (layer in visibleLayers) {
+                repo.loadAllLatLng(layer.id).collect { result ->
+                    if (result is Results.Success) {
+                        result.data?.forEachIndexed { index, (lat, lng) ->
+                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+                                addStringProperty("icon", "ic_point2")
+                                addStringProperty("point_id", "${layer.id} - Point ${index + 1}")
+                            }
+                            selectedMarkers.add(feature)
+                        }
+                    }
+                }
+            }
+            markerFeatures.clear()
+            markerFeatures.addAll(selectedMarkers)
+            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
+            Log.d("GeoPackage", "✅ Updated markers for visible layers: ${visibleLayers.map { it.id }}")
+        }
+    }
+
 //    fun deleteMarker(lat: Double, lng: Double) {
 //        val iterator = markerFeatures.iterator()
 //        while (iterator.hasNext()) {
@@ -232,7 +216,7 @@ class MapViewModel(context: Context) : ViewModel() {
 //                break
 //            }
 //        }
-//
+
 //        viewModelScope.launch {
 //            tableName?.let {
 //                repo.deleteLatLng(lat, lng, it).collect { result ->
@@ -249,58 +233,39 @@ class MapViewModel(context: Context) : ViewModel() {
 //            }
 //        }
 //    }
-//
+
 //    fun isNearLocation(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Boolean {
 //        val threshold = 0.0001
 //        return (Math.abs(lat1 - lat2) < threshold && Math.abs(lng1 - lng2) < threshold)
 //    }
 
+    fun deleteLayer(layerName: String) {
+        viewModelScope.launch {
+            repo.deleteLayer(layerName).collect { result ->
+                when (result) {
+                    is Results.Success -> {
+                        Log.d("MapViewModel", "Layer '$layerName' deleted successfully")
+                        //loadLayers()
+                        _mapState.update { currentState ->
+                            val updatedLayers = currentState.layers.toMutableMap().apply {
+                                remove(layerName)
+                            }
+                            val updatedActiveLayer = if (currentState.activeLayer?.id == layerName) null else currentState.activeLayer
+                            currentState.copy(
+                                layers = updatedLayers,
+                                activeLayer = updatedActiveLayer
+                            )
+                        }
+                    }
+                    is Results.Error -> Log.e("MapViewModel", "Error deleting layer: ${result.message}")
+                    is Results.Loading -> {}
+                }
+            }
+        }
+    }
 
+      //LINE LAYER
 
-//    fun loadLayers() {
-//        viewModelScope.launch {
-//            repo.loadLayers().collect { result ->
-//                when (result) {
-//                    is Results.Loading -> Log.d("GeoPackage", "⌛ Loading layers...")
-//                    is Results.Success -> {
-//                        val loadedLayers = result.data ?: emptyList()
-//                        val mapLayers = loadedLayers.map { layerName ->
-//                            MapLayer(LayerType.POINT, layerName)
-//                        }
-//                        _mapState.update { currentState ->
-//                            currentState.copy(layers = mapLayers)
-//                        }
-//                        Log.d("GeoPackage", "Loaded layers: $loadedLayers")
-//                    }
-//                    is Results.Error -> Log.e("GeoPackage", "Error loading layers: ${result.message}")
-//                }
-//            }
-//        }
-//    }
-//
-//    fun deleteLayer(layerName: String) {
-//        viewModelScope.launch {
-//            repo.deleteLayer(layerName).collect { result ->
-//                when (result) {
-//                    is Results.Success -> {
-//                        Log.d("MapViewModel", "Layer '$layerName' deleted successfully")
-//                        loadLayers()
-//                        _mapState.update { currentState ->
-//                            currentState.copy(
-//                                selectedLayer = if (currentState.selectedLayer == layerName) "" else currentState.selectedLayer,
-//                                selectedLayers = currentState.selectedLayers - layerName
-//                            )
-//                        }
-//                    }
-//                    is Results.Error -> Log.e("MapViewModel", "Error deleting layer: ${result.message}")
-//                    is Results.Loading -> {}
-//                }
-//            }
-//        }
-//    }
-//
-//    //LINE LAYER
-//
 //    fun addPointForLine(lat: Double, lng: Double) {
 //        if (tempLinePoint == null) {
 //            tempLinePoint = lat to lng
@@ -314,7 +279,7 @@ class MapViewModel(context: Context) : ViewModel() {
 //            updateLinesOnMap()
 //        }
 //    }
-//
+
 //    fun updateLinesOnMap() {
 //        val lines = _mapState.value.lineSegments.map { segment ->
 //            val (start, end) = segment
@@ -325,7 +290,7 @@ class MapViewModel(context: Context) : ViewModel() {
 //        }
 //        lineSource.featureCollection(FeatureCollection.fromFeatures(lines))
 //    }
-//
+
 //    fun createNewLineLayer(layerName: String) {
 //        viewModelScope.launch {
 //            repo.createLineLayer(layerName).collect { result ->
@@ -346,7 +311,7 @@ class MapViewModel(context: Context) : ViewModel() {
 //            }
 //        }
 //    }
-//
+
 //    fun setupLineLayer(style: Style) {
 //        style.addSource(lineSource)
 //        val lineLayer = LineLayer("line-layer", "line-source").apply {

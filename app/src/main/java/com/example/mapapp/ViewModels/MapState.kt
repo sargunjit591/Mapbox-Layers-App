@@ -4,13 +4,6 @@ import com.mapbox.maps.Style
 
 data class MapState(
     val currentStyle: String = Style.MAPBOX_STREETS,
-//    val layers: List<MapLayer> = emptyList(),
-//    val latLngList: List<Pair<Double, Double>> = emptyList(),
-//    val selectedLayer: String = "",
-//    val selectedLayers: Set<String> = emptySet(),
-//    val activeLayer: String? = null,
-//    val markers: List<Pair<Double, Double>> = emptyList(),
-//    val lineSegments: List<Pair<Pair<Double, Double>, Pair<Double, Double>>> = emptyList()
     val layers: MutableMap<String,MapLayer> = mutableMapOf(),
     val activeLayer : MapLayer? = null
 )

@@ -49,76 +49,75 @@ class GeoPackageRepository(private val context: Context) {
         return geoPackage!!
     }
 
+    fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
+        emit(Results.Loading())
+        getOrCreateGeoPackage()
+        try {
+            Log.d("GeoPackage", "Saving LatLng ($lat, $lng) to table: $tableName")
 
-//    fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
-//        emit(Results.Loading())
-//        getOrCreateGeoPackage()
-//        try {
-//            Log.d("GeoPackage", "Saving LatLng ($lat, $lng) to table: $tableName")
-//
-//            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
-//                featureDao.newRow().apply {
-//                    geometry = GeoPackageGeometryData().apply {
-//                        setGeometry(Point(lng, lat))
-//                    }
-//                    featureDao.create(this)
-//                }
-//
-//                Log.d("GeoPackage", "LatLng ($lat, $lng) saved successfully.")
-//                emit(Results.Success(true))
-//
-//            } ?: run {
-//                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
-//                emit(Results.Error("Feature table '$tableName' does not exist"))
-//            }
-//
-//        } catch (e: Exception) {
-//            Log.e("GeoPackage", "Error saving LatLng: ${e.message}", e)
-//            emit(Results.Error("Error saving LatLng: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }
+            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
+                featureDao.newRow().apply {
+                    geometry = GeoPackageGeometryData().apply {
+                        setGeometry(Point(lng, lat))
+                    }
+                    featureDao.create(this)
+                }
 
-//    fun loadAllLatLng(tableName: String): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
-//        emit(Results.Loading())
-//        getOrCreateGeoPackage()
-//        val coordinates = mutableListOf<Pair<Double, Double>>()
-//
-//        try {
-//            Log.d("GeoPackage", "Loading all LatLng points from table: $tableName")
-//
-//            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
-//                val rows = featureDao.queryForAll()
-//                for (row in rows) {
-//                    val geometryData = row.geometry
-//                    if (geometryData != null) {
-//                        val geometry = geometryData.geometry
-//                        if (geometry is Point) {
-//                            val lat = geometry.y
-//                            val lng = geometry.x
-//                            coordinates.add(lat to lng)
-//                        }
-//                    }
-//                }
-//
-//                Log.d("GeoPackage", "Loaded ${coordinates.size} coordinates.")
-//                emit(Results.Success(coordinates))
-//
-//            } ?: run {
-//                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
-//                emit(Results.Error("Feature table '$tableName' does not exist"))
-//            }
-//
-//        } catch (e: Exception) {
-//            Log.e("GeoPackage", "Error loading LatLng: ${e.message}", e)
-//            emit(Results.Error("Error loading LatLng: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }.flowOn(Dispatchers.IO)
-//
-//    fun deleteLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow<Results<Boolean>> {
+                Log.d("GeoPackage", "LatLng ($lat, $lng) saved successfully.")
+                emit(Results.Success(true))
+
+            } ?: run {
+                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
+                emit(Results.Error("Feature table '$tableName' does not exist"))
+            }
+
+        } catch (e: Exception) {
+            Log.e("GeoPackage", "Error saving LatLng: ${e.message}", e)
+            emit(Results.Error("Error saving LatLng: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }
+
+    fun loadAllLatLng(tableName: String): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
+        emit(Results.Loading())
+        getOrCreateGeoPackage()
+        val coordinates = mutableListOf<Pair<Double, Double>>()
+
+        try {
+            Log.d("GeoPackage", "Loading all LatLng points from table: $tableName")
+
+            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
+                val rows = featureDao.queryForAll()
+                for (row in rows) {
+                    val geometryData = row.geometry
+                    if (geometryData != null) {
+                        val geometry = geometryData.geometry
+                        if (geometry is Point) {
+                            val lat = geometry.y
+                            val lng = geometry.x
+                            coordinates.add(lat to lng)
+                        }
+                    }
+                }
+
+                Log.d("GeoPackage", "Loaded ${coordinates.size} coordinates.")
+                emit(Results.Success(coordinates))
+
+            } ?: run {
+                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
+                emit(Results.Error("Feature table '$tableName' does not exist"))
+            }
+
+        } catch (e: Exception) {
+            Log.e("GeoPackage", "Error loading LatLng: ${e.message}", e)
+            emit(Results.Error("Error loading LatLng: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }.flowOn(Dispatchers.IO)
+
+//   fun deleteLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow<Results<Boolean>> {
 //        emit(Results.Loading())
 //
 //        try {
@@ -171,52 +170,6 @@ class GeoPackageRepository(private val context: Context) {
 //            emit(Results.Loading(false))
 //        }
 //    }.flowOn(Dispatchers.IO)
-
-//    fun createTableIfNeeded(geoPackage: GeoPackage, tableName: String): Flow<Results<Boolean>> = flow {
-//        emit(Results.Loading())
-//
-//        try {
-//            Log.d("GeoPackage", "Checking if feature table exists: $tableName")
-//
-//            if (geoPackage.isFeatureTable(tableName)) {
-//                Log.d("GeoPackage", "Table already exists, skipping creation.")
-//                emit(Results.Success(true))
-//                return@flow
-//            }
-//
-//            val GeometryColumnss = GeometryColumns().apply {
-//                val column = TableColumnKey(tableName, "geom")
-//                id = column
-//                geometryType = GeometryType.POINT
-//                z = 0.toByte()
-//                m = 0.toByte()
-//            }
-//
-//            val srs = geoPackage.spatialReferenceSystemDao
-//                .getOrCreateFromEpsg(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM.toLong())
-//
-//            GeometryColumnss.srs = srs
-//
-//            val created: FeatureTable? = geoPackage.createFeatureTable(
-//                FeatureTableMetadata.create(
-//                    GeometryColumnss,
-//                    BoundingBox.worldWGS84()
-//                )
-//            )
-//
-//            if (created != null) {
-//                emit(Results.Success(true))
-//            } else {
-//                emit(Results.Error("Failed to create table"))
-//            }
-//
-//        } catch (e: SQLException) {
-//            Log.e("GeoPackageRepository", "Error creating table", e)
-//            emit(Results.Error("SQL Exception: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }
 
     fun createLayer(layer: MapLayer): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
@@ -281,48 +234,25 @@ class GeoPackageRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
+    fun deleteLayer(layerName: String): Flow<Results<Boolean>> = flow {
+        emit(Results.Loading())
+        try {
+            val gpkg = getOrCreateGeoPackage()
+            if (gpkg.isFeatureTable(layerName)) {
+                gpkg.deleteTable(layerName)
+                layers.remove(layerName)
+                emit(Results.Success(true))
+            } else {
+                emit(Results.Error("Layer '$layerName' does not exist"))
+            }
+        } catch (e: Exception) {
+            Log.e("GeoPackageRepository", "Error deleting layer: ${e.message}", e)
+            emit(Results.Error("Error deleting layer: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }.flowOn(Dispatchers.IO)
 
-//    suspend fun getPointId(lat: Double, lng: Double, tableName: String): Long {
-//        return withContext(Dispatchers.IO) {
-//            var id = -1L
-//
-//            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
-//                val allRows = featureDao.queryForAll()
-//
-//                for (row in allRows) {
-//                    val geometryData = row.geometry
-//                    if (geometryData != null) {
-//                        val geometry = geometryData.geometry
-//                        if (geometry is Point && geometry.y == lat && geometry.x == lng) {
-//                            id = row.id
-//                            break
-//                        }
-//                    }
-//                }
-//            }
-//            id
-//        }
-//    }
-//
-//    fun deleteLayer(layerName: String): Flow<Results<Boolean>> = flow {
-//        emit(Results.Loading())
-//        try {
-//            val gpkg = getOrCreateGeoPackage()
-//            if (gpkg.isFeatureTable(layerName)) {
-//                gpkg.deleteTable(layerName)
-//                layers.remove(layerName)
-//                emit(Results.Success(true))
-//            } else {
-//                emit(Results.Error("Layer '$layerName' does not exist"))
-//            }
-//        } catch (e: Exception) {
-//            Log.e("GeoPackageRepository", "Error deleting layer: ${e.message}", e)
-//            emit(Results.Error("Error deleting layer: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }.flowOn(Dispatchers.IO)
-//
 //    fun createLineLayer(layerName: String): Flow<Results<Boolean>> = flow {
 //        emit(Results.Loading())
 //        try {
@@ -357,7 +287,6 @@ class GeoPackageRepository(private val context: Context) {
 //            emit(Results.Loading(false))
 //        }
 //    }.flowOn(Dispatchers.IO)
-
 
     fun closeDatabase() {
         geoPackage?.close()
