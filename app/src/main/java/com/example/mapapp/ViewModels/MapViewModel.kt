@@ -3,6 +3,7 @@ package com.example.mapapp.ViewModels
 import android.content.Context
 import android.graphics.Color
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapapp.Database.GeoPackageRepository
@@ -238,6 +239,28 @@ class MapViewModel(context: Context) : ViewModel() {
             }
         }
     }
+
+    fun deleteLayer(layerName: String) {
+        viewModelScope.launch {
+            repo.deleteLayer(layerName).collect { result ->
+                when (result) {
+                    is Results.Success -> {
+                        Log.d("MapViewModel", "Layer '$layerName' deleted successfully")
+                        loadLayers()
+                        _mapState.update { currentState ->
+                            currentState.copy(
+                                selectedLayer = if (currentState.selectedLayer == layerName) "" else currentState.selectedLayer,
+                                selectedLayers = currentState.selectedLayers - layerName
+                            )
+                        }
+                    }
+                    is Results.Error -> Log.e("MapViewModel", "Error deleting layer: ${result.message}")
+                    is Results.Loading -> {}
+                }
+            }
+        }
+    }
+
 
     fun closeDatabase() {
         repo.closeDatabase()

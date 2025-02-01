@@ -215,6 +215,30 @@ class MapActivity : AppCompatActivity() {
                     mAlertDialog.dismiss()
                 }
             }
+
+            mBinding.btnDeleteLayer.setOnClickListener {
+                val layerNames = mapState.value.layers.map { it.data.toString() }
+                if (layerNames.isEmpty()) {
+                    Toast.makeText(this@MapActivity, "No layers available to delete", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                AlertDialog.Builder(this@MapActivity)
+                    .setTitle("Delete Layer")
+                    .setItems(layerNames.toTypedArray()) { dialog, which ->
+                        val selectedLayer = layerNames[which]
+                        AlertDialog.Builder(this@MapActivity)
+                            .setTitle("Confirm Deletion")
+                            .setMessage("Are you sure you want to delete the layer '$selectedLayer'? This cannot be undone.")
+                            .setPositiveButton("Delete") { _, _ ->
+                                deleteLayer(selectedLayer)
+                                loadAllMarkers()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                    .show()
+            }
         }
     }
 

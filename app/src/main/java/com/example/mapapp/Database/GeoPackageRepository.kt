@@ -319,6 +319,25 @@ class GeoPackageRepository(private val context: Context) {
         }
     }
 
+    fun deleteLayer(layerName: String): Flow<Results<Boolean>> = flow {
+        emit(Results.Loading())
+        try {
+            val gpkg = getOrCreateGeoPackage()
+            if (gpkg.isFeatureTable(layerName)) {
+                gpkg.deleteTable(layerName)
+                layers.remove(layerName)
+                emit(Results.Success(true))
+            } else {
+                emit(Results.Error("Layer '$layerName' does not exist"))
+            }
+        } catch (e: Exception) {
+            Log.e("GeoPackageRepository", "Error deleting layer: ${e.message}", e)
+            emit(Results.Error("Error deleting layer: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }.flowOn(Dispatchers.IO)
+
     fun closeDatabase() {
         geoPackage?.close()
         geoPackage = null
