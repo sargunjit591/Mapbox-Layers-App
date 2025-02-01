@@ -302,14 +302,14 @@ class GeoPackageRepository(private val context: Context) {
             var id = -1L
 
             geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
-                val allRows = featureDao.queryForAll() // Query all rows from the table
+                val allRows = featureDao.queryForAll()
 
                 for (row in allRows) {
                     val geometryData = row.geometry
                     if (geometryData != null) {
                         val geometry = geometryData.geometry
                         if (geometry is Point && geometry.y == lat && geometry.x == lng) {
-                            id = row.id // Retrieve the primary key of the row
+                            id = row.id
                             break
                         }
                     }

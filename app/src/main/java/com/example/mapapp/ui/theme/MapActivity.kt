@@ -91,19 +91,6 @@ class MapActivity : AppCompatActivity() {
         viewModel.loadAllMarkers()
         viewModel.loadLayers()
 
-//        lifecycleScope.launchWhenStarted {
-//            viewModel.layers.collect { layers ->
-//                if (layers.isNotEmpty()) {
-//                    val sharedPref = getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
-//                    sharedPref.edit().putString("LAST_TABLE_NAME", layers.first()).apply()
-//
-//                    viewModel.updateTableName(layers.first())
-//                    viewModel.loadAllMarkers()
-//                }
-//            }
-//        }
-
-        // Inside onCreate()
         lifecycleScope.launchWhenStarted {
             viewModel.selectedLayer.collect { layerName ->
                 layerName.let {

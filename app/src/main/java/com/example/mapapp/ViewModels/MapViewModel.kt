@@ -79,16 +79,7 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     init {
-//        val sharedPref = context.getSharedPreferences("MapPreferences", Context.MODE_PRIVATE)
-//        tableName = sharedPref.getString("LAST_TABLE_NAME", null)
-//
-//        if (tableName != null) {
-//            Log.d("MapViewModel", "Last used table name: $tableName")
-//            repo.initializeDatabase(tableName!!)
-            loadAllMarkers()
-//        } else {
-//            Log.d("MapViewModel", "No previously used table found")
-//        }
+       loadAllMarkers()
     }
 
 
@@ -212,7 +203,7 @@ class MapViewModel(context: Context) : ViewModel() {
                         is Results.Loading -> Log.d("GeoPackage", "Deleting LatLng...")
                         is Results.Success -> {
                             Log.d("GeoPackage", "LatLng deleted successfully!")
-        //                        loadAllMarkers()
+                                loadAllMarkers()
                         }
 
                         is Results.Error -> Log.e("GeoPackage", "Error deleting LatLng: ${result.message}")
@@ -238,10 +229,6 @@ class MapViewModel(context: Context) : ViewModel() {
                 }
             }
         }
-    }
-
-    fun setSelectedLayer(layerName: String) {
-        _selectedLayer.value = layerName
     }
 
     fun loadLayers() {
