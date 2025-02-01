@@ -44,9 +44,8 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var spinner: Spinner
     private lateinit var mBinding: ActivityMapBinding
-    private var selectedMarker: Feature? = null
     var isButtonPressed = false
-    private val viewModel: MapViewModel by viewModels {
+    private val viewModel: MapViewModel by viewModels{
         MapViewModelFactory(this)
     }
 
@@ -89,22 +88,6 @@ class MapActivity : AppCompatActivity() {
             enableLocationComponent()
         }
 
-        viewModel.loadAllMarkers()
-        viewModel.loadLayers()
-
-        lifecycleScope.launchWhenStarted {
-            viewModel.mapState.collect { state ->
-                val selectedLayer = state.selectedLayer
-                if (selectedLayer.isNotEmpty()) {
-                    Log.d("MapActivity", "Active layer updated to: $selectedLayer")
-                    viewModel.updateTableName(selectedLayer)
-                    viewModel.loadAllMarkers()
-                }
-            }
-        }
-
-        setupLayerSelection()
-
         spinner = findViewById(R.id.spinner)
 
         val spinnerList = listOf(
@@ -121,6 +104,30 @@ class MapActivity : AppCompatActivity() {
         arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = arrayAdapter
 
+//        viewModel.loadAllMarkers()
+//        viewModel.loadLayers()
+//
+//        lifecycleScope.launchWhenStarted {
+//            viewModel.mapState.collect { state ->
+//                val selectedLayer = state.selectedLayer
+//                if (selectedLayer.isNotEmpty()) {
+//                    Log.d("MapActivity", "Active layer updated to: $selectedLayer")
+//                    viewModel.updateTableName(selectedLayer)
+//                    viewModel.loadAllMarkers()
+//                }
+//            }
+//        }
+
+//        setupLayerSelection()
+
+        mBinding.apply {
+            btnSelectLayers.setOnClickListener {
+                showLayerSelectionDialog()
+            }
+        }
+
+
+
         viewModel.apply {
             spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(
@@ -133,7 +140,8 @@ class MapActivity : AppCompatActivity() {
                     mapView.getMapboxMap().loadStyleUri(selectedStyle) { style ->
                         setupGeoJsonSource(style)
                         setupSymbolLayer(style)
-                        setupMapInteractions()
+                        //setupMapInteractions()
+                        //setupLineLayer(style)
 
                         val drawable = ContextCompat.getDrawable(
                             this@MapActivity,
@@ -158,7 +166,8 @@ class MapActivity : AppCompatActivity() {
                     mapView.getMapboxMap().loadStyleUri(Style.SATELLITE) { style ->
                         setupGeoJsonSource(style)
                         setupSymbolLayer(style)
-                        setupMapInteractions()
+                        //setupMapInteractions()
+                        //setupLineLayer(style)
                     }
                 }
             }
@@ -171,7 +180,6 @@ class MapActivity : AppCompatActivity() {
             }
 
             mBinding.point.setOnClickListener {
-
                 val mDialogView = LayoutInflater.from(this@MapActivity)
                     .inflate(R.layout.alert_box_1, null)
 
@@ -199,12 +207,11 @@ class MapActivity : AppCompatActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                     mAlertDialog.dismiss()
-                    MapLayer(LayerType.POINT, "A new point layer has been added")
 
                     val layerName = layerNameInput.text.toString().trim()
                     if (layerName.isNotEmpty()) {
-                        viewModel.createNewPointLayer(layerName)
-                        viewModel.updateTableName(layerName)
+                        viewModel.createNewPointLayer(MapLayer(type = LayerType.POINT,color =selectedColor, isVisible = true,id= layerName ))
+//                        viewModel.updateTableName(layerName)
                         Toast.makeText(this@MapActivity, "New Layer Created: $layerName", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this@MapActivity, "Layer name cannot be empty!", Toast.LENGTH_SHORT).show()
@@ -215,30 +222,88 @@ class MapActivity : AppCompatActivity() {
                     mAlertDialog.dismiss()
                 }
             }
+//
+//            mBinding.line.setOnClickListener {
+//                isLineMode = true
+//
+//                val mDialogView = LayoutInflater.from(this@MapActivity)
+//                    .inflate(R.layout.alert_box_2, null)
+//
+//                val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
+//                val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
+//                var selectedColor = 0
+//
+//                colorPickerView.setColorListener(object : ColorListener {
+//                    override fun onColorSelected(color: Int, fromUser: Boolean) {
+//                        selectedColor = color
+//                    }
+//                })
+//
+//                val mBuilder = AlertDialog.Builder(this@MapActivity)
+//                    .setView(mDialogView)
+//                val mAlertDialog = mBuilder.show()
+//
+//                mDialogView.findViewById<Button>(R.id.buttonConfirm).setOnClickListener {
+//                    isButtonPressed = !isButtonPressed
+//
+//                    val colorHex = String.format("#%08X", selectedColor)
+//                    Toast.makeText(
+//                        this@MapActivity,
+//                        "Chosen color is: $colorHex",
+//                        Toast.LENGTH_SHORT
+//                    ).show()
+//
+//                    mAlertDialog.dismiss()
+//
+//                    MapLayer(LayerType.LINE, "A new line layer has been added")
+//
+//                    val layerName = layerNameInput.text.toString().trim()
+//                    if (layerName.isNotEmpty()) {
+//                        viewModel.createNewLineLayer(layerName)
+//                        viewModel.updateTableName(layerName)
+//                        Toast.makeText(
+//                            this@MapActivity,
+//                            "New Line Layer Created: $layerName",
+//                            Toast.LENGTH_SHORT
+//                        ).show()
+//                    } else {
+//                        Toast.makeText(
+//                            this@MapActivity,
+//                            "Layer name cannot be empty!",
+//                            Toast.LENGTH_SHORT
+//                        ).show()
+//                    }
+//                }
+//
+//                mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
+//                    mAlertDialog.dismiss()
+//                }
+//            }
 
-            mBinding.btnDeleteLayer.setOnClickListener {
-                val layerNames = mapState.value.layers.map { it.data.toString() }
-                if (layerNames.isEmpty()) {
-                    Toast.makeText(this@MapActivity, "No layers available to delete", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
 
-                AlertDialog.Builder(this@MapActivity)
-                    .setTitle("Delete Layer")
-                    .setItems(layerNames.toTypedArray()) { dialog, which ->
-                        val selectedLayer = layerNames[which]
-                        AlertDialog.Builder(this@MapActivity)
-                            .setTitle("Confirm Deletion")
-                            .setMessage("Are you sure you want to delete the layer '$selectedLayer'? This cannot be undone.")
-                            .setPositiveButton("Delete") { _, _ ->
-                                deleteLayer(selectedLayer)
-                                loadAllMarkers()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                    .show()
-            }
+//            mBinding.btnDeleteLayer.setOnClickListener {
+//                val layerNames = mapState.value.layers.map { it.data.toString() }
+//                if (layerNames.isEmpty()) {
+//                    Toast.makeText(this@MapActivity, "No layers available to delete", Toast.LENGTH_SHORT).show()
+//                    return@setOnClickListener
+//                }
+//
+//                AlertDialog.Builder(this@MapActivity)
+//                    .setTitle("Delete Layer")
+//                    .setItems(layerNames.toTypedArray()) { dialog, which ->
+//                        val selectedLayer = layerNames[which]
+//                        AlertDialog.Builder(this@MapActivity)
+//                            .setTitle("Confirm Deletion")
+//                            .setMessage("Are you sure you want to delete the layer '$selectedLayer'? This cannot be undone.")
+//                            .setPositiveButton("Delete") { _, _ ->
+//                                deleteLayer(selectedLayer)
+//                                loadAllMarkers()
+//                            }
+//                            .setNegativeButton("Cancel", null)
+//                            .show()
+//                    }
+//                    .show()
+//            }
         }
     }
 
@@ -351,52 +416,59 @@ class MapActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupMapInteractions() {
-        mapView.gestures.addOnMapClickListener { point ->
-            if (isButtonPressed) {
-                if (selectedMarker == null) {
-                    viewModel.addMarker(point.latitude(), point.longitude())
-                }
-            }
-            true
-        }
-        mapView.gestures.addOnMapLongClickListener { point ->
-            if (isButtonPressed) {
-                viewModel.deleteMarker(point.latitude(), point.longitude())
-            }
-            true
-        }
-    }
+//    private fun setupMapInteractions() {
+//        mapView.gestures.addOnMapClickListener { point ->
+//            if(isLineMode){
+//                viewModel.addPointForLine(point.latitude(),point.longitude())
+//            }else{
+//                if (isButtonPressed) {
+//                    if (selectedMarker == null) {
+//                        viewModel.addMarker(point.latitude(), point.longitude())
+//                    }
+//                }
+//            }
+//            true
+//        }
+//        mapView.gestures.addOnMapLongClickListener { point ->
+//            if (isButtonPressed) {
+//                viewModel.deleteMarker(point.latitude(), point.longitude())
+//            }
+//            true
+//        }
+//    }
 
-    private fun setupLayerSelection() {
-        val btnSelectLayers = findViewById<Button>(R.id.btnSelectLayers)
+//    private fun setupLayerSelection() {
+//
+//
+//        mBinding.btnSelectLayers.setOnClickListener {
+//            lifecycleScope.launchWhenStarted {
+//                viewModel.mapState.collect { state ->
+//                    val layerNames = state.layers.map { it.data.toString() }
+//                    if (layerNames.isNotEmpty()) {
+//                        showLayerSelectionDialog(layerNames)
+//                    } else {
+//                        Toast.makeText(this@MapActivity, "No layers available", Toast.LENGTH_SHORT).show()
+//                    }
+//                    cancel()
+//                }
+//            }
+//        }
+//
+//    }
 
-        btnSelectLayers.setOnClickListener {
-            lifecycleScope.launchWhenStarted {
-                viewModel.mapState.collect { state ->
-                    val layerNames = state.layers.map { it.data.toString() }
-                    if (layerNames.isNotEmpty()) {
-                        showLayerSelectionDialog(layerNames)
-                    } else {
-                        Toast.makeText(this@MapActivity, "No layers available", Toast.LENGTH_SHORT).show()
-                    }
-                    cancel()
-                }
-            }
-        }
-
-    }
-
-    private fun showLayerSelectionDialog(layers: List<String>) {
-        val selectedLayers = viewModel.getSelectedLayers().toMutableSet()
-        val layerArray = layers.toTypedArray()
-        val checkedItems = layers.map { it in selectedLayers }.toBooleanArray()
+    private fun showLayerSelectionDialog() {
+        val selectedLayers = viewModel.mapState.value.layers.values.filter { it.isVisible }.
+        map { it.id }.toMutableList()
+        val layerArray = viewModel.mapState.value.layers.keys.toTypedArray()
+        val checkedItems = layerArray.map { it in selectedLayers }.toBooleanArray()
 
         AlertDialog.Builder(this)
             .setTitle("Select Layers to View")
             .setMultiChoiceItems(layerArray, checkedItems) { _, which, isChecked ->
                 if (isChecked) {
-                    selectedLayers.add(layerArray[which])
+                    if(!selectedLayers.contains(layerArray[which])){
+                        selectedLayers.add(layerArray[which])
+                    }
                 } else {
                     selectedLayers.remove(layerArray[which])
                 }
