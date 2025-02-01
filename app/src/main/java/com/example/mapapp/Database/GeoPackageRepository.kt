@@ -76,7 +76,7 @@ class GeoPackageRepository(private val context: Context) {
 
     fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
-        val gpkg = getOrCreateGeoPackage()
+        getOrCreateGeoPackage()
         try {
             Log.d("GeoPackage", "Saving LatLng ($lat, $lng) to table: $tableName")
 
@@ -106,7 +106,7 @@ class GeoPackageRepository(private val context: Context) {
 
     fun loadAllLatLng(tableName: String): Flow<Results<List<Pair<Double, Double>>>> = flow<Results<List<Pair<Double, Double>>>> {
         emit(Results.Loading())
-        val gpkg = getOrCreateGeoPackage()
+        getOrCreateGeoPackage()
         val coordinates = mutableListOf<Pair<Double, Double>>()
 
         try {

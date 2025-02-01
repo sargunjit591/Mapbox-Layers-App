@@ -38,6 +38,7 @@ import com.mapbox.geojson.Feature
 import com.mapbox.maps.plugin.gestures.gestures
 import com.skydoves.colorpickerview.ColorPickerView
 import com.skydoves.colorpickerview.listeners.ColorListener
+import kotlinx.coroutines.cancel
 
 class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
@@ -92,10 +93,11 @@ class MapActivity : AppCompatActivity() {
         viewModel.loadLayers()
 
         lifecycleScope.launchWhenStarted {
-            viewModel.selectedLayer.collect { layerName ->
-                layerName.let {
-                    Log.d("MapActivity", "Active layer updated to: $it")
-                    viewModel.updateTableName(it)
+            viewModel.mapState.collect { state ->
+                val selectedLayer = state.selectedLayer
+                if (selectedLayer.isNotEmpty()) {
+                    Log.d("MapActivity", "Active layer updated to: $selectedLayer")
+                    viewModel.updateTableName(selectedLayer)
                     viewModel.loadAllMarkers()
                 }
             }
@@ -347,15 +349,18 @@ class MapActivity : AppCompatActivity() {
 
         btnSelectLayers.setOnClickListener {
             lifecycleScope.launchWhenStarted {
-                viewModel.layers.collect { layers ->
-                    if (layers.isNotEmpty()) {
-                        showLayerSelectionDialog(layers)
+                viewModel.mapState.collect { state ->
+                    val layerNames = state.layers.map { it.data.toString() }
+                    if (layerNames.isNotEmpty()) {
+                        showLayerSelectionDialog(layerNames)
                     } else {
                         Toast.makeText(this@MapActivity, "No layers available", Toast.LENGTH_SHORT).show()
                     }
+                    cancel()
                 }
             }
         }
+
     }
 
     private fun showLayerSelectionDialog(layers: List<String>) {

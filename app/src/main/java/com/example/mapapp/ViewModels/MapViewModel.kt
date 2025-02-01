@@ -30,25 +30,12 @@ class MapViewModel(context: Context) : ViewModel() {
 
     private val repo = GeoPackageRepository(context)
 
-    private val _latLngList = MutableStateFlow<List<Pair<Double, Double>>>(emptyList())
-    val latLngList: StateFlow<List<Pair<Double, Double>>> = _latLngList
-
-    private val _layers = MutableStateFlow<List<String>>(emptyList())
-    val layers: StateFlow<List<String>> = _layers
-
-    private val _selectedLayer = MutableStateFlow<String>("")
-    val selectedLayer: StateFlow<String> = _selectedLayer
-
-    private val _selectedLayers = MutableStateFlow<MutableSet<String>>(mutableSetOf())
-    val selectedLayers: StateFlow<Set<String>> = _selectedLayers
-
-    private val _activeLayer = MutableStateFlow<String?>(null)
-    val activeLayer: StateFlow<String?> = _activeLayer
-
-    fun getSelectedLayers(): Set<String> = _selectedLayers.value
+    fun getSelectedLayers(): Set<String> = _mapState.value.selectedLayers
 
     fun updateVisibleLayers(layers: Set<String>) {
-        _selectedLayers.value = layers.toMutableSet()
+        _mapState.update { currentState ->
+            currentState.copy(selectedLayers = layers)
+        }
         loadMarkersForVisibleLayers()
         loadAllMarkers()
     }
@@ -56,7 +43,7 @@ class MapViewModel(context: Context) : ViewModel() {
     fun loadMarkersForVisibleLayers() {
         viewModelScope.launch {
             val markers = mutableListOf<Feature>()
-            for (layer in _selectedLayers.value) {
+            for (layer in _mapState.value.selectedLayers) {
                 repo.loadAllLatLng(layer).collect { result ->
                     if (result is Results.Success) {
                         result.data?.forEach { (lat, lng) ->
@@ -79,7 +66,8 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     init {
-       loadAllMarkers()
+        loadAllMarkers()
+        loadLayers()
     }
 
 
@@ -100,9 +88,6 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     fun setupSymbolLayer(style: Style) {
-//        style.removeStyleLayer("text-layer")
-//        style.removeStyleLayer("marker-layer")
-
         val symbolLayer = SymbolLayer("marker-layer", "marker-source").apply {
             iconImage("{icon}")
             iconAllowOverlap(true)
@@ -125,7 +110,7 @@ class MapViewModel(context: Context) : ViewModel() {
     }
 
     fun addMarker(lat: Double, lng: Double) {
-        val activeTable = _activeLayer.value ?: tableName
+        val activeTable = _mapState.value.activeLayer ?: tableName
         if (activeTable.isNullOrEmpty()) {
             Log.e("GeoPackage", "❌ No active layer selected for adding points!")
             return
@@ -159,7 +144,7 @@ class MapViewModel(context: Context) : ViewModel() {
 
     fun loadAllMarkers() {
         viewModelScope.launch {
-            val selected = _selectedLayers.value
+            val selected = _mapState.value.selectedLayers
             val selectedMarkers = mutableListOf<Feature>()
 
             for (layer in selected) {
@@ -223,7 +208,9 @@ class MapViewModel(context: Context) : ViewModel() {
             repo.createPointLayer(layerName).collect { result ->
                 if (result is Results.Success) {
                     loadLayers()
-                    _selectedLayer.value = layerName
+                    _mapState.update { currentState ->
+                        currentState.copy(selectedLayer = layerName)
+                    }
                     updateTableName(layerName)
                     loadAllMarkers()
                 }
@@ -237,8 +224,14 @@ class MapViewModel(context: Context) : ViewModel() {
                 when (result) {
                     is Results.Loading -> Log.d("GeoPackage", "⌛ Loading layers...")
                     is Results.Success -> {
-                        _layers.value = result.data ?: emptyList()
-                        Log.d("GeoPackage", "Loaded layers: ${_layers.value}")
+                        val loadedLayers = result.data ?: emptyList()
+                        val mapLayers = loadedLayers.map { layerName ->
+                            MapLayer(LayerType.POINT, layerName)
+                        }
+                        _mapState.update { currentState ->
+                            currentState.copy(layers = mapLayers)
+                        }
+                        Log.d("GeoPackage", "Loaded layers: $loadedLayers")
                     }
                     is Results.Error -> Log.e("GeoPackage", "Error loading layers: ${result.message}")
                 }
