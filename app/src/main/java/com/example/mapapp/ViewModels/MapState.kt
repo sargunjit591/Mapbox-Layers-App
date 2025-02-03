@@ -1,5 +1,6 @@
 package com.example.mapapp.ViewModels
 
+import com.mapbox.geojson.Feature
 import com.mapbox.maps.Style
 
 data class MapState(
@@ -9,7 +10,8 @@ data class MapState(
     val lineSegments: List<Pair<Pair<Double, Double>, Pair<Double, Double>>> = emptyList()
 )
 
-data class MapLayer(val type: LayerType, val color: Int, val id: String, var isVisible: Boolean= false)
+data class MapLayer(val type: LayerType, val color: Int,
+                    val id: String, var isVisible: Boolean= false,val markerFeatures : MutableList<Feature> = mutableListOf())
 
 enum class LayerType {
     POINT,

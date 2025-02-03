@@ -124,7 +124,6 @@ class MapActivity : AppCompatActivity() {
                         setupGeoJsonSource(style)
                         setupSymbolLayer(style)
                         setupMapInteractions()
-                        setupLineMarkerLayer(style)
                         setupLineLayer(style)
 
                         val drawable = ContextCompat.getDrawable(
@@ -147,13 +146,13 @@ class MapActivity : AppCompatActivity() {
                 }
 
                 override fun onNothingSelected(parent: AdapterView<*>?) {
-                    mapView.getMapboxMap().loadStyleUri(Style.SATELLITE) { style ->
-                        setupGeoJsonSource(style)
-                        setupSymbolLayer(style)
-                        setupMapInteractions()
-                        setupLineMarkerLayer(style)
-                        setupLineLayer(style)
-                    }
+//                    mapView.getMapboxMap().loadStyleUri(Style.SATELLITE) { style ->
+//                        setupGeoJsonSource(style)
+//                        setupSymbolLayer(style)
+//                        setupMapInteractions()
+//                        setupLineMarkerLayer(style)
+//                        setupLineLayer(style)
+//                    }
                 }
             }
 
