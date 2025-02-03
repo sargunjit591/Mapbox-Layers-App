@@ -45,6 +45,7 @@ class MapActivity : AppCompatActivity() {
     private lateinit var spinner: Spinner
     private lateinit var mBinding: ActivityMapBinding
     var isButtonPressed = false
+    var isLineMode=false
     private val viewModel: MapViewModel by viewModels{
         MapViewModelFactory(this)
     }
@@ -123,7 +124,8 @@ class MapActivity : AppCompatActivity() {
                         setupGeoJsonSource(style)
                         setupSymbolLayer(style)
                         setupMapInteractions()
-                        //setupLineLayer(style)
+                        setupLineMarkerLayer(style)
+                        setupLineLayer(style)
 
                         val drawable = ContextCompat.getDrawable(
                             this@MapActivity,
@@ -149,7 +151,8 @@ class MapActivity : AppCompatActivity() {
                         setupGeoJsonSource(style)
                         setupSymbolLayer(style)
                         setupMapInteractions()
-                        //setupLineLayer(style)
+                        setupLineMarkerLayer(style)
+                        setupLineLayer(style)
                     }
                 }
             }
@@ -162,6 +165,7 @@ class MapActivity : AppCompatActivity() {
             }
 
             mBinding.point.setOnClickListener {
+                isLineMode=false
                 val mDialogView = LayoutInflater.from(this@MapActivity)
                     .inflate(R.layout.alert_box_1, null)
 
@@ -204,62 +208,65 @@ class MapActivity : AppCompatActivity() {
                 }
             }
 
-//            mBinding.line.setOnClickListener {
-//                isLineMode = true
-//
-//                val mDialogView = LayoutInflater.from(this@MapActivity)
-//                    .inflate(R.layout.alert_box_2, null)
-//
-//                val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
-//                val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
-//                var selectedColor = 0
-//
-//                colorPickerView.setColorListener(object : ColorListener {
-//                    override fun onColorSelected(color: Int, fromUser: Boolean) {
-//                        selectedColor = color
-//                    }
-//                })
-//
-//                val mBuilder = AlertDialog.Builder(this@MapActivity)
-//                    .setView(mDialogView)
-//                val mAlertDialog = mBuilder.show()
-//
-//                mDialogView.findViewById<Button>(R.id.buttonConfirm).setOnClickListener {
-//                    isButtonPressed = !isButtonPressed
-//
-//                    val colorHex = String.format("#%08X", selectedColor)
-//                    Toast.makeText(
-//                        this@MapActivity,
-//                        "Chosen color is: $colorHex",
-//                        Toast.LENGTH_SHORT
-//                    ).show()
-//
-//                    mAlertDialog.dismiss()
-//
-//                    MapLayer(LayerType.LINE, "A new line layer has been added")
-//
-//                    val layerName = layerNameInput.text.toString().trim()
-//                    if (layerName.isNotEmpty()) {
-//                        viewModel.createNewLineLayer(layerName)
-//                        viewModel.updateTableName(layerName)
-//                        Toast.makeText(
-//                            this@MapActivity,
-//                            "New Line Layer Created: $layerName",
-//                            Toast.LENGTH_SHORT
-//                        ).show()
-//                    } else {
-//                        Toast.makeText(
-//                            this@MapActivity,
-//                            "Layer name cannot be empty!",
-//                            Toast.LENGTH_SHORT
-//                        ).show()
-//                    }
-//                }
-//
-//                mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
-//                    mAlertDialog.dismiss()
-//                }
-//            }
+            mBinding.line.setOnClickListener {
+                isLineMode = true
+
+                val mDialogView = LayoutInflater.from(this@MapActivity)
+                    .inflate(R.layout.alert_box_2, null)
+
+                val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
+                val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
+                var selectedColor = 0
+
+                colorPickerView.setColorListener(object : ColorListener {
+                    override fun onColorSelected(color: Int, fromUser: Boolean) {
+                        selectedColor = color
+                    }
+                })
+
+                val mBuilder = AlertDialog.Builder(this@MapActivity)
+                    .setView(mDialogView)
+                val mAlertDialog = mBuilder.show()
+
+                mDialogView.findViewById<Button>(R.id.buttonConfirm).setOnClickListener {
+                    isButtonPressed = !isButtonPressed
+
+                    val colorHex = String.format("#%08X", selectedColor)
+                    Toast.makeText(
+                        this@MapActivity,
+                        "Chosen color is: $colorHex",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    mAlertDialog.dismiss()
+
+                    val layerName = layerNameInput.text.toString().trim()
+                    if (layerName.isNotEmpty()) {
+                        MapLayer(
+                            LayerType.LINE,
+                            color =  0xFF00FF00.toInt(),
+                            id = layerName,
+                            isVisible = true
+                        )
+                        viewModel.createNewLineLayer(MapLayer(type = LayerType.LINE,color =selectedColor, isVisible = true,id= layerName ))
+                        Toast.makeText(
+                            this@MapActivity,
+                            "New Line Layer Created: $layerName",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this@MapActivity,
+                            "Layer name cannot be empty!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
+                    mAlertDialog.dismiss()
+                }
+            }
 
             mBinding.btnDeleteLayer.setOnClickListener {
                 val layerNames = viewModel.mapState.value.layers.keys.toList()
@@ -398,20 +405,21 @@ class MapActivity : AppCompatActivity() {
 
     private fun setupMapInteractions() {
         mapView.gestures.addOnMapClickListener { point ->
-            //if(isLineMode){
-                //viewModel.addPointForLine(point.latitude(),point.longitude())
-            //}else{
+            if(isLineMode){
+                viewModel.addPointForLine(point.latitude(),point.longitude())
+            }else{
                 if (isButtonPressed) {
                     viewModel.addMarker(point.latitude(), point.longitude())
                 }
+            }
             true
         }
-//        mapView.gestures.addOnMapLongClickListener { point ->
-//            if (isButtonPressed) {
-//                viewModel.deleteMarker(point.latitude(), point.longitude())
-//            }
-//            true
-//        }
+        mapView.gestures.addOnMapLongClickListener { point ->
+            if (isButtonPressed) {
+                viewModel.deleteMarker(point.latitude(), point.longitude())
+            }
+            true
+        }
     }
 
     private fun showLayerSelectionDialog() {
@@ -434,8 +442,8 @@ class MapActivity : AppCompatActivity() {
             .setPositiveButton("Apply") { _, _ ->
                 viewModel.apply {
                     updateVisibleLayers(selectedLayers)
-                    loadMarkersForVisibleLayers()
                     loadAllMarkers()
+                    loadAllLineSegments()
                 }
             }
             .setNegativeButton("Cancel", null)

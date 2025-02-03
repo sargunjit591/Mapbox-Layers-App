@@ -5,10 +5,11 @@ import com.mapbox.maps.Style
 data class MapState(
     val currentStyle: String = Style.MAPBOX_STREETS,
     val layers: MutableMap<String,MapLayer> = mutableMapOf(),
-    val activeLayer : MapLayer? = null
+    val activeLayer : MapLayer? = null,
+    val lineSegments: List<Pair<Pair<Double, Double>, Pair<Double, Double>>> = emptyList()
 )
 
-data class MapLayer(val type: LayerType, val color:Int,val id:String,var isVisible:Boolean= false)
+data class MapLayer(val type: LayerType, val color: Int, val id: String, var isVisible: Boolean= false)
 
 enum class LayerType {
     POINT,

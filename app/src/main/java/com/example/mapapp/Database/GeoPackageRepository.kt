@@ -21,12 +21,14 @@ import mil.nga.geopackage.features.columns.GeometryColumns
 import mil.nga.geopackage.features.user.FeatureRow
 import mil.nga.geopackage.features.user.FeatureTable
 import mil.nga.geopackage.features.user.FeatureTableMetadata
-import mil.nga.geopackage.geom.GeoPackageGeometryData
 import mil.nga.proj.ProjectionConstants
 import mil.nga.sf.GeometryType
-import mil.nga.sf.Point
 import java.lang.Math.abs
 import java.sql.SQLException
+import mil.nga.sf.Point
+import mil.nga.sf.LineString
+import mil.nga.geopackage.geom.GeoPackageGeometryData
+
 
 class GeoPackageRepository(private val context: Context) {
     private val gpkgName = "markers"
@@ -48,6 +50,8 @@ class GeoPackageRepository(private val context: Context) {
         }
         return geoPackage!!
     }
+
+    //POINT LAYER
 
     fun saveLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
@@ -117,60 +121,6 @@ class GeoPackageRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-//   fun deleteLatLng(lat: Double, lng: Double,tableName: String): Flow<Results<Boolean>> = flow<Results<Boolean>> {
-//        emit(Results.Loading())
-//
-//        try {
-//            Log.d("GeoPackage", "Deleting point at ($lat, $lng) from table: $tableName")
-//
-//            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
-//                val rowsToDelete = mutableListOf<FeatureRow>()
-//                val epsilon = 0.0001
-//
-//                val cursor = featureDao.queryForAll()
-//                cursor.use {
-//                    while (cursor.moveToNext()) {
-//                        val geometryColumnIndex = cursor.getColumnIndex("geom")
-//                        if (geometryColumnIndex == -1) continue
-//
-//                        val geometryBlob = cursor.getBlob(geometryColumnIndex)
-//                        val geometryData = GeoPackageGeometryData.create(geometryBlob)
-//
-//                        geometryData?.geometry?.let { geometry ->
-//                            if (geometry is Point &&
-//                                abs(geometry.y - lat) < epsilon &&
-//                                abs(geometry.x - lng) < epsilon) {
-//
-//                                val row = featureDao.newRow()
-//                                row.geometry = geometryData
-//                                rowsToDelete.add(row)
-//                            }
-//                        }
-//                    }
-//                }
-//
-//                if (rowsToDelete.isNotEmpty()) {
-//                    rowsToDelete.forEach { featureDao.delete(it) }
-//                    Log.d("GeoPackage", "Deleted ${rowsToDelete.size} points at ($lat, $lng)")
-//                    emit(Results.Success(true))
-//                } else {
-//                    Log.d("GeoPackage", "No matching points found at ($lat, $lng)")
-//                    emit(Results.Error("No matching points found"))
-//                }
-//
-//            } ?: run {
-//                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
-//                emit(Results.Error("Feature table '$tableName' does not exist"))
-//            }
-//
-//        } catch (e: Exception) {
-//            Log.e("GeoPackage", "Error deleting point: ${e.message}", e)
-//            emit(Results.Error("Error deleting LatLng: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }.flowOn(Dispatchers.IO)
-
     fun createLayer(layer: MapLayer): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
 
@@ -181,7 +131,7 @@ class GeoPackageRepository(private val context: Context) {
             }
 
             val geometryColumns = GeometryColumns().apply {
-                val column = TableColumnKey(layer.id, "geom")//understand use of column name
+                val column = TableColumnKey(layer.id, "geom")
                 id = column
                 geometryType = when(layer.type){
                     LayerType.POINT ->GeometryType.POINT
@@ -204,7 +154,7 @@ class GeoPackageRepository(private val context: Context) {
             if (created != null) {
                 emit(Results.Success(true))
             } else {
-                emit(Results.Error("Failed to create point layer"))
+                emit(Results.Error("Failed to create new layer"))
             }
 
         } catch (e: SQLException) {
@@ -214,25 +164,64 @@ class GeoPackageRepository(private val context: Context) {
         }
     }
 
-    fun loadLayers(): Flow<Results<List<MapLayer>>> = flow {
+    fun loadLayers(): Flow<Results<MutableList<MapLayer>>> = flow {
         emit(Results.Loading())
         try {
             val tables: List<String> = geoPackage!!.featureTables
             Log.d("GeoPackage", "Available layers: $tables")
-            val mapLayers: List<MapLayer> = tables.map { tableName ->
-                MapLayer(
-                    type = LayerType.POINT,
-                    color = 0xFF000000.toInt(),
-                    id = tableName,
-                    isVisible = false
-                )
+
+            val mapLayers = mutableListOf<MapLayer>()
+
+            for (tableName in tables) {
+                try {
+                    val featureDao = geoPackage!!.getFeatureDao(tableName)
+                    val geometryType = featureDao.geometryType
+
+                    val layerType = when (geometryType) {
+                        GeometryType.POINT,
+                        GeometryType.MULTIPOINT -> {
+                            LayerType.POINT
+                        }
+
+                        GeometryType.LINESTRING,
+                        GeometryType.MULTILINESTRING,
+                        GeometryType.CIRCULARSTRING -> {
+                            LayerType.LINE
+                        }
+
+                        GeometryType.POLYGON,
+                        GeometryType.MULTIPOLYGON -> {
+                            LayerType.POLYGON
+                        }
+
+                        else -> {
+                            LayerType.POINT
+                        }
+                    }
+
+                    val layer = MapLayer(
+                        type = layerType,
+                        color = 0xFF000000.toInt(),
+                        id = tableName,
+                        isVisible = false
+                    )
+
+                    mapLayers.add(layer)
+
+                } catch (e: Exception) {
+                    Log.e("GeoPackage", "Could not read geometry type for $tableName", e)
+                }
             }
+
             emit(Results.Success(mapLayers))
         } catch (e: Exception) {
             Log.e("GeoPackage", "Error loading layers: ${e.message}", e)
             emit(Results.Error("Error loading layers: ${e.message}"))
+        } finally {
+            emit(Results.Loading(isLoading = false))
         }
     }.flowOn(Dispatchers.IO)
+
 
     fun deleteLayer(layerName: String): Flow<Results<Boolean>> = flow {
         emit(Results.Loading())
@@ -253,40 +242,79 @@ class GeoPackageRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-//    fun createLineLayer(layerName: String): Flow<Results<Boolean>> = flow {
-//        emit(Results.Loading())
-//        try {
-//            if (geoPackage?.isFeatureTable(layerName) == true) {
-//                emit(Results.Success(true))
-//                return@flow
-//            }
-//
-//            val geometryColumns = GeometryColumns().apply {
-//                val column = TableColumnKey(layerName, "geom")
-//                id = column
-//                geometryType = GeometryType.LINESTRING
-//            }
-//
-//            val srs = geoPackage?.spatialReferenceSystemDao
-//                ?.getOrCreateFromEpsg(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM.toLong())
-//            geometryColumns.srs = srs
-//
-//            val created = geoPackage?.createFeatureTable(
-//                FeatureTableMetadata.create(geometryColumns, BoundingBox.worldWGS84())
-//            )
-//
-//            if (created != null) {
-//                layers.add(layerName)
-//                emit(Results.Success(true))
-//            } else {
-//                emit(Results.Error("Failed to create line layer"))
-//            }
-//        } catch (e: SQLException) {
-//            emit(Results.Error("SQL Exception: ${e.message}"))
-//        } finally {
-//            emit(Results.Loading(false))
-//        }
-//    }.flowOn(Dispatchers.IO)
+    //LINE LAYER
+
+    fun saveLineSegment(
+        start: Pair<Double, Double>,
+        end: Pair<Double, Double>,
+        tableName: String
+    ): Flow<Results<Boolean>> = flow {
+        emit(Results.Loading())
+        getOrCreateGeoPackage()
+        try {
+            Log.d("GeoPackage", "Saving line segment from $start to $end in table: $tableName")
+
+            val featureDao = geoPackage?.getFeatureDao(tableName)
+            if (featureDao == null) {
+                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
+                emit(Results.Error("Feature table '$tableName' does not exist"))
+                return@flow
+            }
+
+            val newRow = featureDao.newRow()
+
+            newRow.geometry = GeoPackageGeometryData().apply {
+                val startPoint = Point(start.second, start.first)
+                val endPoint = Point(end.second, end.first)
+                val lineString = LineString(listOf(startPoint, endPoint))
+                setGeometry(lineString)
+            }
+
+            featureDao.create(newRow)
+
+            Log.d("GeoPackage", "Line segment saved successfully.")
+            emit(Results.Success(true))
+        } catch (e: Exception) {
+            Log.e("GeoPackage", "Error saving line segment: ${e.message}", e)
+            emit(Results.Error("Error saving line segment: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    fun loadAllLineSegments(tableName: String): Flow<Results<out List<Pair<Pair<Double, Double>, Pair<Double, Double>>>>> = flow {
+        emit(Results.Loading())
+        val segments = mutableListOf<Pair<Pair<Double, Double>, Pair<Double, Double>>>()
+        try {
+            geoPackage?.getFeatureDao(tableName)?.let { featureDao ->
+                val rows = featureDao.queryForAll()
+                for (row in rows) {
+                    val geometryData = row.geometry
+                    if (geometryData != null) {
+                        val geometry = geometryData.geometry
+                        if (geometry is LineString) {
+                            val points: List<Point> = geometry.getPoints()
+                            if (points.size >= 2) {
+                                val startPoint = points[0]
+                                val endPoint = points[1]
+                                segments.add((startPoint.y to startPoint.x) to (endPoint.y to endPoint.x))
+                            }
+                        }
+                    }
+                }
+                Log.d("GeoPackage", "Loaded ${segments.size} line segments from table: $tableName")
+                emit(Results.Success(segments))
+            } ?: run {
+                Log.e("GeoPackage", "Feature table '$tableName' does not exist")
+                emit(Results.Error<List<Pair<Pair<Double, Double>, Pair<Double, Double>>>>("Feature table '$tableName' does not exist"))
+            }
+        } catch (e: Exception) {
+            Log.e("GeoPackage", "Error loading line segments: ${e.message}", e)
+            emit(Results.Error("Error loading line segments: ${e.message}"))
+        } finally {
+            emit(Results.Loading(false))
+        }
+    }.flowOn(Dispatchers.IO)
 
     fun closeDatabase() {
         geoPackage?.close()
