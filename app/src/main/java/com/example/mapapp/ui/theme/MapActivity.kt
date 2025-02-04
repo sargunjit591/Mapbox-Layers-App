@@ -35,6 +35,16 @@ import com.example.mapapp.ViewModels.MapViewModel
 import com.example.mapapp.ViewModels.MapViewModelFactory
 import com.example.mapapp.databinding.ActivityMapBinding
 import com.mapbox.geojson.Feature
+import com.mapbox.geojson.FeatureCollection
+import com.mapbox.maps.extension.style.layers.addLayer
+import com.mapbox.maps.extension.style.layers.generated.LineLayer
+import com.mapbox.maps.extension.style.layers.generated.SymbolLayer
+import com.mapbox.maps.extension.style.layers.getLayer
+import com.mapbox.maps.extension.style.layers.properties.generated.Visibility
+import com.mapbox.maps.extension.style.sources.addSource
+import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
+import com.mapbox.maps.extension.style.sources.getSource
+import com.mapbox.maps.extension.style.sources.getSourceAs
 import com.mapbox.maps.plugin.gestures.gestures
 import com.skydoves.colorpickerview.ColorPickerView
 import com.skydoves.colorpickerview.listeners.ColorListener
@@ -45,6 +55,7 @@ class MapActivity : AppCompatActivity() {
     private lateinit var spinner: Spinner
     private lateinit var mBinding: ActivityMapBinding
     var isButtonPressed = false
+    var isSet = false
     var isLineMode=false
     private val viewModel: MapViewModel by viewModels{
         MapViewModelFactory(this)
@@ -121,8 +132,11 @@ class MapActivity : AppCompatActivity() {
                 ) {
                     val selectedStyle = spinnerList[position].second
                     mapView.getMapboxMap().loadStyleUri(selectedStyle) { style ->
-                        setupGeoJsonSource(style)
-                        setupSymbolLayer(style)
+                        mapState.value.layers.values.forEach { layer ->
+                            if (layer.type == LayerType.POINT) {
+                                addPointLayerToStyle(layer, style)
+                            }
+                        }
                         setupMapInteractions()
                         setupLineLayer(style)
 
@@ -144,16 +158,7 @@ class MapActivity : AppCompatActivity() {
                     }
                     updateStyle(selectedStyle)
                 }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) {
-//                    mapView.getMapboxMap().loadStyleUri(Style.SATELLITE) { style ->
-//                        setupGeoJsonSource(style)
-//                        setupSymbolLayer(style)
-//                        setupMapInteractions()
-//                        setupLineMarkerLayer(style)
-//                        setupLineLayer(style)
-//                    }
-                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
             mBinding.add.setOnClickListener {
@@ -195,8 +200,16 @@ class MapActivity : AppCompatActivity() {
 
                     val layerName = layerNameInput.text.toString().trim()
                     if (layerName.isNotEmpty()) {
-                        viewModel.createNewPointLayer(MapLayer(type = LayerType.POINT,color =selectedColor, isVisible = true,id= layerName ))
+                        val newLayer = MapLayer(
+                            type = LayerType.POINT,
+                            color = selectedColor,
+                            isVisible = true,
+                            id = layerName
+                        )
+                        viewModel.createNewPointLayer(newLayer)
                         Toast.makeText(this@MapActivity, "New Layer Created: $layerName", Toast.LENGTH_SHORT).show()
+                        mapView.getMapboxMap().getStyle { style ->
+                            addPointLayerToStyle(newLayer, style)}
                     } else {
                         Toast.makeText(this@MapActivity, "Layer name cannot be empty!", Toast.LENGTH_SHORT).show()
                     }
@@ -283,7 +296,6 @@ class MapActivity : AppCompatActivity() {
                             .setMessage("Are you sure you want to delete the layer '$selectedLayer'? This cannot be undone.")
                             .setPositiveButton("Delete") { _, _ ->
                                 viewModel.deleteLayer(selectedLayer)
-                                viewModel.loadAllMarkers()
                             }
                             .setNegativeButton("Cancel", null)
                             .show()
@@ -393,56 +405,77 @@ class MapActivity : AppCompatActivity() {
             pulsingEnabled = true
         }
         locationPlugin.addOnIndicatorPositionChangedListener { point ->
+            if(isSet) return@addOnIndicatorPositionChangedListener
             mapView.getMapboxMap().setCamera(
                 CameraOptions.Builder()
                     .center(point)
                     .zoom(20.0)
                     .build()
             )
+            isSet = true
         }
     }
 
     private fun setupMapInteractions() {
         mapView.gestures.addOnMapClickListener { point ->
-            if(isLineMode){
-                viewModel.addPointForLine(point.latitude(),point.longitude())
-            }else{
-                if (isButtonPressed) {
+                if (isLineMode) {
+                    viewModel.addPointForLine(point.latitude(), point.longitude())
+                } else {
                     viewModel.addMarker(point.latitude(), point.longitude())
                 }
+            val active = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
+            val sourceId = "${active.id}-source"
+            mapView.getMapboxMap().getStyle { style ->
+                val src = style.getSourceAs<GeoJsonSource>(sourceId)
+                src?.featureCollection(FeatureCollection.fromFeatures(active.markerFeatures))
             }
             true
         }
         mapView.gestures.addOnMapLongClickListener { point ->
             if (isButtonPressed) {
                 viewModel.deleteMarker(point.latitude(), point.longitude())
+                val activeLayer = viewModel.mapState.value.activeLayer
+                if (activeLayer != null && activeLayer.type == LayerType.POINT) {
+                    mapView.getMapboxMap().getStyle { style ->
+                        val sourceId = "${activeLayer.id}-source"
+                        val source = style.getSourceAs<GeoJsonSource>(sourceId)
+                        source?.featureCollection(
+                            FeatureCollection.fromFeatures(activeLayer.markerFeatures.toTypedArray())
+                        )
+                    }
+                }
             }
             true
         }
     }
 
     private fun showLayerSelectionDialog() {
-        val selectedLayers = viewModel.mapState.value.layers.values.filter { it.isVisible }.
-        map { it.id }.toMutableList()
-        val layerArray = viewModel.mapState.value.layers.keys.toTypedArray()
-        val checkedItems = layerArray.map { it in selectedLayers }.toBooleanArray()
+        val allLayerIds = viewModel.mapState.value.layers.keys.toList()
+        val checkedItems = allLayerIds.map { id ->
+            viewModel.mapState.value.layers[id]?.isVisible == true
+        }.toBooleanArray()
 
         AlertDialog.Builder(this)
             .setTitle("Select Layers to View")
-            .setMultiChoiceItems(layerArray, checkedItems) { _, which, isChecked ->
-                if (isChecked) {
-                    if(!selectedLayers.contains(layerArray[which])){
-                        selectedLayers.add(layerArray[which])
-                    }
-                } else {
-                    selectedLayers.remove(layerArray[which])
-                }
+            .setMultiChoiceItems(allLayerIds.toTypedArray(), checkedItems) { _, which, isChecked ->
+                val layerId = allLayerIds[which]
+                viewModel.mapState.value.layers[layerId]?.isVisible = isChecked
             }
             .setPositiveButton("Apply") { _, _ ->
-                viewModel.apply {
-                    updateVisibleLayers(selectedLayers)
-                    loadAllMarkers()
-                    loadAllLineSegments()
+                val selectedLayers = allLayerIds.filter { id ->
+                    viewModel.mapState.value.layers[id]?.isVisible == true
+                }
+                viewModel.updateVisibleLayers(selectedLayers)
+
+                mapView.getMapboxMap().getStyle { style ->
+                    for ((layerId, layer) in viewModel.mapState.value.layers) {
+                        if (layer.isVisible) {
+                            viewModel.addPointLayerToStyle(layer, style)
+                            style.getLayer("${layerId}-symbol-layer")?.visibility(Visibility.VISIBLE)
+                        } else {
+                            style.getLayer("${layerId}-symbol-layer")?.visibility(Visibility.NONE)
+                        }
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)

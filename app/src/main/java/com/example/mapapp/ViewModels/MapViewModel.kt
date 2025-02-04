@@ -20,9 +20,11 @@ import com.mapbox.maps.extension.style.layers.addLayerAbove
 import com.mapbox.maps.extension.style.layers.generated.LineLayer
 import com.mapbox.maps.extension.style.layers.generated.SymbolLayer
 import com.mapbox.maps.extension.style.layers.getLayer
+import com.mapbox.maps.extension.style.layers.properties.generated.Visibility
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
 import com.mapbox.maps.extension.style.sources.getSource
+import com.mapbox.maps.extension.style.sources.getSourceAs
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -33,21 +35,15 @@ class MapViewModel(context: Context) : ViewModel() {
     private val markerFeatures = mutableListOf<Feature>()
     private val lineFeatures = mutableListOf<Feature>()
     private val linePointFeatures = mutableListOf<Feature>()
-    private var tempLinePoint: Pair<Double, Double>? = null
     private val repo = GeoPackageRepository(context)
+    private var tempLineStart: Pair<Double, Double>? = null
 
-    fun createNewPointLayer(layer:MapLayer) {
+    fun createNewPointLayer(newLayer: MapLayer) {
         viewModelScope.launch {
-            repo.createLayer(layer).collect { result ->
-                when(result){
-                    is Results.Error -> {}
-                    is Results.Loading -> {}
-                    is Results.Success -> {
-                        if(result.data == true){
-                            _mapState.value.layers[layer.id] = layer
-                            _mapState.value = _mapState.value.copy(activeLayer = layer)
-                        }
-                    }
+            repo.createLayer(newLayer).collect { result ->
+                if (result is Results.Success && result.data == true) {
+                    _mapState.value.layers[newLayer.id] = newLayer
+                    _mapState.value = _mapState.value.copy(activeLayer = newLayer)
                 }
             }
         }
@@ -58,40 +54,61 @@ class MapViewModel(context: Context) : ViewModel() {
         viewModelScope.launch {
             repo.loadLayers().collect { result ->
                 when (result) {
-                    is Results.Loading -> Log.d("GeoPackage", "⌛ Loading layers...")
+                    is Results.Loading -> {}
                     is Results.Success -> {
-                        val loadedLayers = result.data ?: emptyList()
-                        _mapState.value = mapState.value.copy(layers = loadedLayers.associateBy { it.id }
-                            .toMutableMap())
-                        Log.d("GeoPackage", "Loaded layers: $loadedLayers")
+                        val dbLayers = result.data ?: emptyList()
+                        val layerMap = dbLayers.associateBy { it.id }.toMutableMap()
+                        _mapState.value = _mapState.value.copy(layers = layerMap)
+
+                        dbLayers.forEach { layer ->
+                            when (layer.type) {
+                                LayerType.POINT -> {
+                                    repo.loadAllLatLng(layer.id).collect { pointsResult ->
+                                        if (pointsResult is Results.Success) {
+                                            pointsResult.data?.forEachIndexed { index, (lat, lng) ->
+                                                val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+                                                    addStringProperty("icon", "ic_point2")
+                                                    addStringProperty("point_id", "${layer.id}-Point${index+1}")
+                                                }
+                                                layer.markerFeatures.add(feature)
+                                            }
+                                        }
+                                    }
+                                }
+                                LayerType.LINE -> {
+                                    repo.loadAllLineSegments(layer.id).collect { segResult ->
+                                        if (segResult is Results.Success) {
+                                            segResult.data?.forEach { (start, end) ->
+                                                val (lat1, lng1) = start
+                                                val (lat2, lng2) = end
+                                                val line = Feature.fromGeometry(
+                                                    LineString.fromLngLats(listOf(
+                                                        Point.fromLngLat(lng1, lat1),
+                                                        Point.fromLngLat(lng2, lat2)
+                                                    ))
+                                                )
+                                                layer.markerFeatures.add(line)
+                                            }
+                                        }
+                                    }
+                                }
+                                else -> {}
+                            }
+                        }
                     }
-                    is Results.Error -> Log.e("GeoPackage", "Error loading layers: ${result.message}")
+                    is Results.Error -> {}
                 }
             }
         }
     }
 
-    fun updateVisibleLayers(visibleLayerIds: MutableList<String>) {
-        val updatedLayers = _mapState.value.layers.mapValues { (id, layer) ->
-            layer.copy(isVisible = visibleLayerIds.contains(id))
-        }.toMutableMap()
 
-        val currentActive = _mapState.value.activeLayer
-        val newActive = if (currentActive != null &&
-            updatedLayers[currentActive.id]?.isVisible == true) {
-            currentActive
-        } else {
-            updatedLayers.values.find { it.isVisible }
+    fun updateVisibleLayers(visibleLayerIds: List<String>) {
+        _mapState.value.layers.forEach { (id, layer) ->
+            layer.isVisible = visibleLayerIds.contains(id)
         }
-
-        _mapState.value = _mapState.value.copy(layers = updatedLayers, activeLayer = newActive)
-    }
-
-
-    private val geoJsonSource: GeoJsonSource by lazy {
-        GeoJsonSource.Builder("marker-source")
-            .featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-            .build()
+        val newActive = _mapState.value.layers.values.firstOrNull { it.isVisible }
+        _mapState.value = _mapState.value.copy(activeLayer = newActive)
     }
 
     private val lineSource: GeoJsonSource by lazy {
@@ -104,100 +121,75 @@ class MapViewModel(context: Context) : ViewModel() {
         _mapState.update { it.copy(currentStyle = styleUri) }
     }
 
-    fun setupGeoJsonSource(style: Style) {
-        style.addSource(geoJsonSource)
-    }
-
     // POINT LAYER
 
-    fun setupSymbolLayer(style: Style) {
-        val symbolLayer = SymbolLayer("marker-layer", "marker-source").apply {
-            iconImage("{icon}")
-            iconColor(mapState.value.layers["layer1"]?.color ?: 0xFF000000.toInt())
-            iconAllowOverlap(true)
-            iconIgnorePlacement(true)
+    fun addPointLayerToStyle(layer: MapLayer, style: Style) {
+        val sourceId = "${layer.id}-source"
+
+        val geoJsonSource = if (style.getSource(sourceId) == null) {
+            GeoJsonSource.Builder(sourceId)
+                .featureCollection(FeatureCollection.fromFeatures(layer.markerFeatures))
+                .build().also { style.addSource(it) }
+        } else {
+            style.getSourceAs<GeoJsonSource>(sourceId)?.apply {
+                featureCollection(FeatureCollection.fromFeatures(layer.markerFeatures))
+            }
         }
 
-        val textLayer = SymbolLayer("text-layer", "marker-source").apply {
-            textField(Expression.get("point_id"))
-            textSize(literal(12.0))
-            textColor(Color.BLACK)
-            textHaloColor(Color.WHITE)
-            textHaloWidth(literal(1.5))
-            textAllowOverlap(true)
-            textIgnorePlacement(true)
-            textOffset(literal(listOf(0.0, -2.0)))
+        val symbolLayerId = "${layer.id}-symbol-layer"
+        if (style.getLayer(symbolLayerId) == null) {
+            val symbolLayer = SymbolLayer(symbolLayerId, sourceId).apply {
+                iconImage("{icon}")
+                iconSize(1.0)
+                iconAllowOverlap(true)
+                iconIgnorePlacement(true)
+                textField(Expression.get("point_id"))
+                textSize(literal(12.0))
+                textColor(Color.BLACK)
+                textHaloColor(Color.WHITE)
+                textHaloWidth(literal(1.5))
+                textAllowOverlap(true)
+                textIgnorePlacement(true)
+                textOffset(literal(listOf(0.0, -2.0)))
+                visibility(
+                    if (layer.isVisible) Visibility.VISIBLE
+                    else Visibility.NONE
+                )
+            }
+            style.addLayer(symbolLayer)
         }
-
-        style.addLayer(symbolLayer)
-        style.addLayerAbove(textLayer, "marker-layer")
     }
 
+
     fun addMarker(lat: Double, lng: Double) {
-        val activeLayer = _mapState.value.activeLayer
-        if (activeLayer == null || activeLayer.id.isEmpty()) {
-            Log.e("GeoPackage", "❌ No active layer selected for adding points!")
+        val layer = _mapState.value.activeLayer
+        if (layer == null || layer.type != LayerType.POINT) {
+            Log.e("GeoPackage", "❌ No active POINT layer selected for adding a marker!")
             return
         }
-        val tableName = activeLayer.id
 
         val pointId = System.currentTimeMillis()
         val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
             addStringProperty("icon", "ic_point2")
-            addStringProperty("point_id", "$tableName - Point $pointId")
+            addStringProperty("point_id", "${layer.id} - Point ${pointId}")
         }
 
-        markerFeatures.add(feature)
-        geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-
-        Log.d("GeoPackage", "✅ Adding Marker to Map: ($lat, $lng) in $tableName")
-
+        layer.markerFeatures.add(feature)
         viewModelScope.launch {
-            repo.saveLatLng(lat, lng, tableName).collect { result ->
-                when (result) {
-                    is Results.Success -> {
-                        loadAllMarkers()
-                        Log.d("GeoPackage", "✔ Point Saved in DB: ($lat, $lng)")
-                    }
-                    is Results.Error -> Log.e("GeoPackage", "❌ Error saving point: ${result.message}")
-                    is Results.Loading -> { }
-                }
-            }
-        }
-    }
-
-    fun loadAllMarkers() {
-        viewModelScope.launch {
-            val selectedMarkers = mutableListOf<Feature>()
-            val visibleLayers = _mapState.value.layers.values.filter { it.isVisible }
-            for (layer in visibleLayers) {
-                repo.loadAllLatLng(layer.id).collect { result ->
-                    if (result is Results.Success) {
-                        result.data?.forEachIndexed { index, (lat, lng) ->
-                            val feature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
-                                addStringProperty("icon", "ic_point2")
-                                addStringProperty("point_id", "${layer.id} - Point ${index + 1}")
-                            }
-                            selectedMarkers.add(feature)
-                        }
-                    }
-                }
-            }
-            markerFeatures.clear()
-            markerFeatures.addAll(selectedMarkers)
-            geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
-            Log.d("GeoPackage", "✅ Updated markers for visible layers: ${visibleLayers.map { it.id }}")
+            repo.saveLatLng(lat, lng, layer.id).collect()
         }
     }
 
     fun deleteMarker(lat: Double, lng: Double) {
-        val iterator = markerFeatures.iterator()
+        val layer = _mapState.value.activeLayer ?: return
+        if (layer.type != LayerType.POINT) return
+
+        val iterator = layer.markerFeatures.iterator()
         while (iterator.hasNext()) {
             val feature = iterator.next()
-            val point = feature.geometry() as? Point
-            if (point != null && isNearLocation(point.latitude(), point.longitude(), lat, lng)) {
+            val point = feature.geometry() as? Point ?: continue
+            if (isNearLocation(point.latitude(), point.longitude(), lat, lng)) {
                 iterator.remove()
-                geoJsonSource.featureCollection(FeatureCollection.fromFeatures(markerFeatures))
                 break
             }
         }
@@ -211,22 +203,13 @@ class MapViewModel(context: Context) : ViewModel() {
     fun deleteLayer(layerName: String) {
         viewModelScope.launch {
             repo.deleteLayer(layerName).collect { result ->
-                when (result) {
-                    is Results.Success -> {
-                        Log.d("GeoPackage", "Layer '$layerName' deleted successfully")
-                        _mapState.update { currentState ->
-                            val updatedLayers = currentState.layers.toMutableMap().apply {
-                                remove(layerName)
-                            }
-                            val updatedActiveLayer = if (currentState.activeLayer?.id == layerName) null else currentState.activeLayer
-                            currentState.copy(
-                                layers = updatedLayers,
-                                activeLayer = updatedActiveLayer
-                            )
-                        }
+                if (result is Results.Success && result.data == true) {
+                    _mapState.update { state ->
+                        val updated = state.layers.toMutableMap()
+                        updated.remove(layerName)
+                        val newActive = if (state.activeLayer?.id == layerName) null else state.activeLayer
+                        state.copy(layers = updated, activeLayer = newActive)
                     }
-                    is Results.Error -> Log.e("MapViewModel", "Error deleting layer: ${result.message}")
-                    is Results.Loading -> {}
                 }
             }
         }
@@ -234,95 +217,40 @@ class MapViewModel(context: Context) : ViewModel() {
 
     //LINE LAYER
 
-    private fun addLinePointMarker(lat: Double, lng: Double) {
-        val markerFeature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
-            addStringProperty("icon", "ic_point2")
-        }
-        linePointFeatures.add(markerFeature)
-        updateLinesOnMap()
-    }
-
     fun addPointForLine(lat: Double, lng: Double) {
-        if (tempLinePoint == null) {
-            tempLinePoint = lat to lng
-            addLinePointMarker(lat, lng)
+        val layer = _mapState.value.activeLayer
+        if (layer == null || layer.type != LayerType.LINE) {
+            Log.e("GeoPackage", "❌ No active LINE layer selected for adding line segments!")
+            return
+        }
+
+        if (tempLineStart == null) {
+            tempLineStart = lat to lng
         } else {
-            val lastPoint = tempLinePoint!!
-            val newSegment = Pair(lastPoint, lat to lng)
-
-            _mapState.update { currentState ->
-                currentState.copy(lineSegments = currentState.lineSegments + newSegment)
-            }
-
-            tempLinePoint = lat to lng
-
-            updateLinesOnMap()
-            addLinePointMarker(lat, lng)
-
+            val (lat1, lng1) = tempLineStart!!
+            val lineFeature = Feature.fromGeometry(
+                LineString.fromLngLats(
+                    listOf(
+                        Point.fromLngLat(lng1, lat1),
+                        Point.fromLngLat(lng, lat)
+                    )
+                )
+            )
+            layer.markerFeatures.add(lineFeature)
             viewModelScope.launch {
-                repo.saveLineSegment(lastPoint, lat to lng, _mapState.value.activeLayer?.id ?: "")
-                    .collect { result ->
-                        when (result) {
-                            is Results.Success -> {
-                                _mapState.update { currentState ->
-                                    val updatedLayers = currentState.layers.toMutableMap()
-                                    updatedLayers[currentState.activeLayer?.id]?.let { activeLayer ->
-                                        updatedLayers[currentState.activeLayer!!.id] = activeLayer.copy(isVisible = true)
-                                    }
-                                    currentState.copy(layers = updatedLayers)
-                                }
-                                loadAllLineSegments()
-                            }
-                            is Results.Error -> {}
-                            is Results.Loading -> {}
-                        }
-                    }
+                repo.saveLineSegment((lat1 to lng1), (lat to lng), layer.id).collect()
             }
+
+            tempLineStart = lat to lng
         }
     }
 
-    fun updateLinesOnMap() {
-        lineFeatures.clear()
-        val computedLines = _mapState.value.lineSegments.map { segment ->
-            val (start, end) = segment
-            val startPoint = Point.fromLngLat(start.second, start.first)
-            val endPoint   = Point.fromLngLat(end.second, end.first)
-            Feature.fromGeometry(LineString.fromLngLats(listOf(startPoint, endPoint)))
-        }
-        lineFeatures.addAll(computedLines)
-
-        val allFeatures = mutableListOf<Feature>()
-        allFeatures.addAll(lineFeatures)
-        allFeatures.addAll(linePointFeatures)
-
-        lineSource.featureCollection(FeatureCollection.fromFeatures(allFeatures))
-    }
-
-    fun createNewLineLayer(layerName: MapLayer) {
+    fun createNewLineLayer(newLayer: MapLayer) {
         viewModelScope.launch {
-            repo.createLayer(layerName).collect { result ->
-                when(result) {
-                    is Results.Success -> {
-                        val newLayer = MapLayer(
-                            type = LayerType.LINE,
-                            color = 0xFF00FF00.toInt(),
-                            id = layerName.id,
-                            isVisible = false
-                        )
-                        _mapState.update { currentState ->
-                            val updatedLayers = currentState.layers.toMutableMap()
-                            updatedLayers[layerName.id] = newLayer
-                            currentState.copy(
-                                activeLayer = newLayer,
-                                layers = updatedLayers
-                            )
-                        }
-                        Log.d("MapViewModel", "Line layer '${layerName.id}' created successfully.")
-                    }
-                    is Results.Error -> {
-                        Log.e("MapViewModel", "Error creating line layer: ${result.message}")
-                    }
-                    is Results.Loading -> {}
+            repo.createLayer(newLayer).collect { result ->
+                if (result is Results.Success && result.data == true) {
+                    _mapState.value.layers[newLayer.id] = newLayer
+                    _mapState.value = _mapState.value.copy(activeLayer = newLayer)
                 }
             }
         }
@@ -351,31 +279,6 @@ class MapViewModel(context: Context) : ViewModel() {
                 filter(Expression.eq(Expression.literal("\$type"), Expression.literal("Point")))
             }
             style.addLayer(pointLayer)
-        }
-
-
-    }
-
-    fun loadAllLineSegments() {
-        viewModelScope.launch {
-            val visibleLineLayers = _mapState.value.layers.values
-                .filter { it.isVisible && it.type == LayerType.LINE }
-
-            val allSegments = mutableListOf<Pair<Pair<Double, Double>, Pair<Double, Double>>>()
-
-            visibleLineLayers.forEach { layer ->
-                repo.loadAllLineSegments(layer.id).collect { result ->
-                    if (result is Results.Success) {
-                        result.data?.let { allSegments.addAll(it) }
-                    }
-                }
-            }
-
-            _mapState.update { currentState ->
-                currentState.copy(lineSegments = allSegments)
-            }
-
-            updateLinesOnMap()
         }
     }
 
