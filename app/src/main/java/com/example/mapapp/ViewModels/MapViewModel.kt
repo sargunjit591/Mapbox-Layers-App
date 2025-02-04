@@ -37,6 +37,7 @@ class MapViewModel(context: Context) : ViewModel() {
     private val linePointFeatures = mutableListOf<Feature>()
     private val repo = GeoPackageRepository(context)
     private var tempLineStart: Pair<Double, Double>? = null
+    private var tempLinePoint: Pair<Double, Double>? = null
 
     fun createNewPointLayer(newLayer: MapLayer) {
         viewModelScope.launch {
@@ -102,7 +103,6 @@ class MapViewModel(context: Context) : ViewModel() {
         }
     }
 
-
     fun updateVisibleLayers(visibleLayerIds: List<String>) {
         _mapState.value.layers.forEach { (id, layer) ->
             layer.isVisible = visibleLayerIds.contains(id)
@@ -160,7 +160,6 @@ class MapViewModel(context: Context) : ViewModel() {
         }
     }
 
-
     fun addMarker(lat: Double, lng: Double) {
         val layer = _mapState.value.activeLayer
         if (layer == null || layer.type != LayerType.POINT) {
@@ -217,40 +216,95 @@ class MapViewModel(context: Context) : ViewModel() {
 
     //LINE LAYER
 
-    fun addPointForLine(lat: Double, lng: Double) {
-        val layer = _mapState.value.activeLayer
-        if (layer == null || layer.type != LayerType.LINE) {
-            Log.e("GeoPackage", "❌ No active LINE layer selected for adding line segments!")
-            return
+    private fun addLinePointMarker(lat: Double, lng: Double) {
+        val markerFeature = Feature.fromGeometry(Point.fromLngLat(lng, lat)).apply {
+            addStringProperty("icon", "ic_point2")
         }
+        linePointFeatures.add(markerFeature)
+        updateLinesOnMap()
+    }
 
-        if (tempLineStart == null) {
-            tempLineStart = lat to lng
+    fun addPointForLine(lat: Double, lng: Double) {
+        if (tempLinePoint == null) {
+            tempLinePoint = lat to lng
+            addLinePointMarker(lat, lng)
         } else {
-            val (lat1, lng1) = tempLineStart!!
-            val lineFeature = Feature.fromGeometry(
-                LineString.fromLngLats(
-                    listOf(
-                        Point.fromLngLat(lng1, lat1),
-                        Point.fromLngLat(lng, lat)
-                    )
-                )
-            )
-            layer.markerFeatures.add(lineFeature)
-            viewModelScope.launch {
-                repo.saveLineSegment((lat1 to lng1), (lat to lng), layer.id).collect()
+            val lastPoint = tempLinePoint!!
+            val newSegment = Pair(lastPoint, lat to lng)
+
+            _mapState.update { currentState ->
+                currentState.copy(lineSegments = currentState.lineSegments + newSegment)
             }
 
-            tempLineStart = lat to lng
+            tempLinePoint = lat to lng
+
+            updateLinesOnMap()
+            addLinePointMarker(lat, lng)
+
+            viewModelScope.launch {
+                repo.saveLineSegment(lastPoint, lat to lng, _mapState.value.activeLayer?.id ?: "")
+                    .collect { result ->
+                        when (result) {
+                            is Results.Success -> {
+                                _mapState.update { currentState ->
+                                    val updatedLayers = currentState.layers.toMutableMap()
+                                    updatedLayers[currentState.activeLayer?.id]?.let { activeLayer ->
+                                        updatedLayers[currentState.activeLayer!!.id] = activeLayer.copy(isVisible = true)
+                                    }
+                                    currentState.copy(layers = updatedLayers)
+                                }
+                                loadAllLineSegments()
+                            }
+                            is Results.Error -> {}
+                            is Results.Loading -> {}
+                        }
+                    }
+            }
         }
     }
 
-    fun createNewLineLayer(newLayer: MapLayer) {
+    fun updateLinesOnMap() {
+        lineFeatures.clear()
+        val computedLines = _mapState.value.lineSegments.map { segment ->
+            val (start, end) = segment
+            val startPoint = Point.fromLngLat(start.second, start.first)
+            val endPoint   = Point.fromLngLat(end.second, end.first)
+            Feature.fromGeometry(LineString.fromLngLats(listOf(startPoint, endPoint)))
+        }
+        lineFeatures.addAll(computedLines)
+
+        val allFeatures = mutableListOf<Feature>()
+        allFeatures.addAll(lineFeatures)
+        allFeatures.addAll(linePointFeatures)
+
+        lineSource.featureCollection(FeatureCollection.fromFeatures(allFeatures))
+    }
+
+    fun createNewLineLayer(layerName: MapLayer) {
         viewModelScope.launch {
-            repo.createLayer(newLayer).collect { result ->
-                if (result is Results.Success && result.data == true) {
-                    _mapState.value.layers[newLayer.id] = newLayer
-                    _mapState.value = _mapState.value.copy(activeLayer = newLayer)
+            repo.createLayer(layerName).collect { result ->
+                when(result) {
+                    is Results.Success -> {
+                        val newLayer = MapLayer(
+                            type = LayerType.LINE,
+                            color = 0xFF00FF00.toInt(),
+                            id = layerName.id,
+                            isVisible = false
+                        )
+                        _mapState.update { currentState ->
+                            val updatedLayers = currentState.layers.toMutableMap()
+                            updatedLayers[layerName.id] = newLayer
+                            currentState.copy(
+                                activeLayer = newLayer,
+                                layers = updatedLayers
+                            )
+                        }
+                        Log.d("MapViewModel", "Line layer '${layerName.id}' created successfully.")
+                    }
+                    is Results.Error -> {
+                        Log.e("MapViewModel", "Error creating line layer: ${result.message}")
+                    }
+                    is Results.Loading -> {}
                 }
             }
         }
@@ -279,6 +333,31 @@ class MapViewModel(context: Context) : ViewModel() {
                 filter(Expression.eq(Expression.literal("\$type"), Expression.literal("Point")))
             }
             style.addLayer(pointLayer)
+        }
+
+
+    }
+
+    fun loadAllLineSegments() {
+        viewModelScope.launch {
+            val visibleLineLayers = _mapState.value.layers.values
+                .filter { it.isVisible && it.type == LayerType.LINE }
+
+            val allSegments = mutableListOf<Pair<Pair<Double, Double>, Pair<Double, Double>>>()
+
+            visibleLineLayers.forEach { layer ->
+                repo.loadAllLineSegments(layer.id).collect { result ->
+                    if (result is Results.Success) {
+                        result.data?.let { allSegments.addAll(it) }
+                    }
+                }
+            }
+
+            _mapState.update { currentState ->
+                currentState.copy(lineSegments = allSegments)
+            }
+
+            updateLinesOnMap()
         }
     }
 
