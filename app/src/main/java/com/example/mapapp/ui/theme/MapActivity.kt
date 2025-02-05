@@ -27,7 +27,9 @@ import android.widget.Button
 import android.widget.EditText
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.mapapp.R
 import com.example.mapapp.ViewModels.LayerType
 import com.example.mapapp.ViewModels.MapLayer
@@ -49,6 +51,7 @@ import com.mapbox.maps.plugin.gestures.gestures
 import com.skydoves.colorpickerview.ColorPickerView
 import com.skydoves.colorpickerview.listeners.ColorListener
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
@@ -96,8 +99,47 @@ class MapActivity : AppCompatActivity() {
 
         mapView = findViewById(R.id.mapView)
 
-        mapView.getMapboxMap().loadStyleUri(Style.STANDARD) {
+        mapView.getMapboxMap().loadStyleUri(Style.STANDARD) { style ->
             enableLocationComponent()
+            viewModel.mapState.value.layers.values.forEach { layer ->
+                if (layer.isVisible) {
+                    when (layer.type) {
+                        LayerType.POINT -> viewModel.addPointLayerToStyle(layer, style)
+                        LayerType.LINE -> viewModel.addLineLayerToStyle(layer, style)
+                        else -> {}
+                    }
+                    val sourceId = "${layer.id}-source"
+                    style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
+                        FeatureCollection.fromFeatures(layer.markerFeatures)
+                    )
+                }
+            }
+            setupMapInteractions()
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.mapState.collect { state ->
+                    mapView.getMapboxMap().getStyle { style ->
+                        state.layers.values.forEach { layer ->
+                            val sourceId = "${layer.id}-source"
+                            style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
+                                FeatureCollection.fromFeatures(layer.markerFeatures)
+                            )
+                            if (layer.isVisible) {
+                                when (layer.type) {
+                                    LayerType.POINT -> viewModel.addPointLayerToStyle(layer, style)
+                                    LayerType.LINE -> viewModel.addLineLayerToStyle(layer, style)
+                                    else -> {}
+                                }
+                            } else {
+                                style.getLayer("${layer.id}-symbol-layer")?.visibility(Visibility.NONE)
+                                style.getLayer("${layer.id}-line-layer")?.visibility(Visibility.NONE)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         spinner = findViewById(R.id.spinner)
@@ -426,7 +468,6 @@ class MapActivity : AppCompatActivity() {
             } else {
                 viewModel.addMarker(point.latitude(), point.longitude())
             }
-
             val activeLayer = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
             val sourceId = "${activeLayer.id}-source"
             mapView.getMapboxMap().getStyle { style ->
@@ -434,7 +475,6 @@ class MapActivity : AppCompatActivity() {
                     FeatureCollection.fromFeatures(activeLayer.markerFeatures)
                 )
             }
-
             true
         }
 
@@ -485,7 +525,7 @@ class MapActivity : AppCompatActivity() {
                             if (layer.type == LayerType.POINT) {
                                 style.getLayer("${layerId}-symbol-layer")
                                     ?.visibility(Visibility.NONE)
-                            } else if (layer.type == LayerType.LINE) {
+                          } else if (layer.type == LayerType.LINE) {
                                 style.getLayer("${layerId}-line-layer")
                                     ?.visibility(Visibility.NONE)
                             }
