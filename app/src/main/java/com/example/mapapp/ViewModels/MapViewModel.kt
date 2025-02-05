@@ -120,18 +120,18 @@ class MapViewModel(context: Context) : ViewModel() {
         }
     }
 
+    fun setActiveLayer(layer: MapLayer?) {
+        _mapState.update { currentState ->
+            currentState.copy(activeLayer = layer)
+        }
+    }
+
     fun updateVisibleLayers(visibleLayerIds: List<String>) {
         _mapState.value.layers.forEach { (id, layer) ->
             layer.isVisible = visibleLayerIds.contains(id)
         }
         val newActive = _mapState.value.layers.values.firstOrNull { it.isVisible }
         _mapState.value = _mapState.value.copy(activeLayer = newActive)
-    }
-
-    private val lineSource: GeoJsonSource by lazy {
-        GeoJsonSource.Builder("line-source")
-            .featureCollection(FeatureCollection.fromFeatures(emptyArray()))
-            .build()
     }
 
     fun updateStyle(styleUri: String) {

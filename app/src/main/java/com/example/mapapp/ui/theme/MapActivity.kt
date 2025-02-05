@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -25,6 +26,8 @@ import com.mapbox.maps.plugin.locationcomponent.location
 import android.view.animation.AnimationUtils
 import android.widget.Button
 import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.Lifecycle
@@ -48,8 +51,10 @@ import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
 import com.mapbox.maps.extension.style.sources.getSource
 import com.mapbox.maps.extension.style.sources.getSourceAs
 import com.mapbox.maps.plugin.gestures.gestures
+import com.skydoves.colorpickerview.ColorEnvelope
 import com.skydoves.colorpickerview.ColorPickerView
 import com.skydoves.colorpickerview.listeners.ColorListener
+import com.skydoves.colorpickerview.sliders.BrightnessSlideBar
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
@@ -57,27 +62,15 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var spinner: Spinner
     private lateinit var mBinding: ActivityMapBinding
-    var isButtonPressed = false
-    var isSet = false
-    var isLineMode=false
+    private var isButtonPressed = false
+    private var isSet = false
+    private var isLineMode=false
+    private var isEditing = false
     private val viewModel: MapViewModel by viewModels{
         MapViewModelFactory(this)
     }
 
-    private val rotateOpen: Animation by lazy {
-        AnimationUtils.loadAnimation(this, R.anim.rotate_open_anim)
-    }
-    private val rotateClose: Animation by lazy {
-        AnimationUtils.loadAnimation(this, R.anim.rotate_close_anim)
-    }
-    private val fromBottom: Animation by lazy {
-        AnimationUtils.loadAnimation(this, R.anim.from_bottom_anim)
-    }
-    private val toBottom: Animation by lazy {
-        AnimationUtils.loadAnimation(this, R.anim.to_bottom_anim)
-    }
-    private var clicked = false
-
+    @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mBinding = ActivityMapBinding.inflate(layoutInflater)
@@ -207,57 +200,88 @@ class MapActivity : AppCompatActivity() {
             }
 
             mBinding.add.setOnClickListener {
-                setVisibility(clicked)
-                setAnimation(clicked)
-                setClickable(clicked)
-                clicked = !clicked
-            }
-
-            mBinding.point.setOnClickListener {
-                isLineMode=false
                 val mDialogView = LayoutInflater.from(this@MapActivity)
-                    .inflate(R.layout.alert_box_1, null)
+                    .inflate(R.layout.add_layer_box, null)
+
+                val radioGroup = mDialogView.findViewById<RadioGroup>(R.id.radiogroup)
+                val radioPoint = mDialogView.findViewById<RadioButton>(R.id.Point)
+                val radioLine = mDialogView.findViewById<RadioButton>(R.id.Line)
+                val radioPolygon = mDialogView.findViewById<RadioButton>(R.id.Polygon)
 
                 val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
                 val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
-                var selectedColor = 0
 
-                colorPickerView.setColorListener(object : ColorListener {
-                    override fun onColorSelected(color: Int, fromUser: Boolean) {
-                        selectedColor = color
+                 val brightnessSlideBar = mDialogView.findViewById<BrightnessSlideBar>(R.id.brightnessSlideBar)
+                 colorPickerView.attachBrightnessSlider(brightnessSlideBar)
+
+                var selectedColor = 0
+                colorPickerView.setColorListener(
+                    object : com.skydoves.colorpickerview.listeners.ColorEnvelopeListener {
+                        override fun onColorSelected(envelope: ColorEnvelope, fromUser: Boolean) {
+                            selectedColor = envelope.color
+                        }
                     }
-                })
+                )
 
                 val mBuilder = AlertDialog.Builder(this@MapActivity)
                     .setView(mDialogView)
                 val mAlertDialog = mBuilder.show()
 
                 mDialogView.findViewById<Button>(R.id.buttonConfirm).setOnClickListener {
-                    isButtonPressed = !isButtonPressed
-
-                    val colorHex = String.format("#%08X", selectedColor)
-                    Toast.makeText(
-                        this@MapActivity,
-                        "Chosen color is: $colorHex",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    mAlertDialog.dismiss()
-
+                    isButtonPressed=!isButtonPressed
                     val layerName = layerNameInput.text.toString().trim()
-                    if (layerName.isNotEmpty()) {
-                        val newLayer = MapLayer(
-                            type = LayerType.POINT,
-                            color = selectedColor,
-                            isVisible = true,
-                            id = layerName
-                        )
-                        viewModel.createNewPointLayer(newLayer)
-                        Toast.makeText(this@MapActivity, "New Layer Created: $layerName", Toast.LENGTH_SHORT).show()
-                        mapView.getMapboxMap().getStyle { style ->
-                            addPointLayerToStyle(newLayer, style)}
-                    } else {
+                    if (layerName.isEmpty()) {
                         Toast.makeText(this@MapActivity, "Layer name cannot be empty!", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
                     }
+
+                    val colorHex = String.format("#%08X", selectedColor)
+                    Toast.makeText(this@MapActivity, "Chosen color: $colorHex", Toast.LENGTH_SHORT).show()
+
+                    when (radioGroup.checkedRadioButtonId) {
+                        R.id.Point -> {
+                            val newLayer = MapLayer(
+                                type = LayerType.POINT,
+                                color = selectedColor,
+                                isVisible = true,
+                                id = layerName
+                            )
+                            viewModel.createNewPointLayer(newLayer)
+                            Toast.makeText(
+                                this@MapActivity,
+                                "New Point Layer Created: $layerName",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            mapView.getMapboxMap().getStyle { style ->
+                                addPointLayerToStyle(newLayer, style)
+                            }
+                        }
+
+                        R.id.Line -> {
+                            isLineMode=true
+                            val newLayer = MapLayer(
+                                type = LayerType.LINE,
+                                color = selectedColor,
+                                isVisible = true,
+                                id = layerName
+                            )
+                            viewModel.createNewLineLayer(newLayer)
+                            Toast.makeText(
+                                this@MapActivity,
+                                "New Line Layer Created: $layerName",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        R.id.Polygon -> {
+                        }
+
+                        else -> {
+                            Toast.makeText(this@MapActivity, "Please select a layer type!", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                    }
+                    mAlertDialog.dismiss()
                 }
 
                 mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
@@ -265,64 +289,16 @@ class MapActivity : AppCompatActivity() {
                 }
             }
 
-            mBinding.line.setOnClickListener {
-                isLineMode = true
+            mBinding.edit.setOnClickListener {
+                mBinding.Cancel.visibility=View.VISIBLE
+                showEditLayerDialog()
+            }
 
-                val mDialogView = LayoutInflater.from(this@MapActivity)
-                    .inflate(R.layout.alert_box_2, null)
-
-                val colorPickerView = mDialogView.findViewById<ColorPickerView>(R.id.colorPickerView)
-                val layerNameInput = mDialogView.findViewById<EditText>(R.id.etLayerName)
-                var selectedColor = 0
-
-                colorPickerView.setColorListener(object : ColorListener {
-                    override fun onColorSelected(color: Int, fromUser: Boolean) {
-                        selectedColor = color
-                    }
-                })
-
-                val mBuilder = AlertDialog.Builder(this@MapActivity)
-                    .setView(mDialogView)
-                val mAlertDialog = mBuilder.show()
-
-                mDialogView.findViewById<Button>(R.id.buttonConfirm).setOnClickListener {
-                    isButtonPressed = !isButtonPressed
-
-                    val colorHex = String.format("#%08X", selectedColor)
-                    Toast.makeText(
-                        this@MapActivity,
-                        "Chosen color is: $colorHex",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    mAlertDialog.dismiss()
-
-                    val layerName = layerNameInput.text.toString().trim()
-                    if (layerName.isNotEmpty()) {
-                        MapLayer(
-                            LayerType.LINE,
-                            color =  0xFF00FF00.toInt(),
-                            id = layerName,
-                            isVisible = true
-                        )
-                        viewModel.createNewLineLayer(MapLayer(type = LayerType.LINE,color =selectedColor, isVisible = true,id= layerName ))
-                        Toast.makeText(
-                            this@MapActivity,
-                            "New Line Layer Created: $layerName",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            this@MapActivity,
-                            "Layer name cannot be empty!",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-
-                mDialogView.findViewById<Button>(R.id.buttonCancel).setOnClickListener {
-                    mAlertDialog.dismiss()
-                }
+            mBinding.Cancel.setOnClickListener {
+                mBinding.Cancel.visibility = View.GONE
+                isEditing = false
+                viewModel.setActiveLayer(null)
+                Toast.makeText(this@MapActivity, "Editing cancelled", Toast.LENGTH_SHORT).show()
             }
 
             mBinding.btnDeleteLayer.setOnClickListener {
@@ -354,67 +330,6 @@ class MapActivity : AppCompatActivity() {
         super.onDestroy()
         viewModel.closeDatabase()
         Log.d("GeoPackage", "GeoPackage database closed")
-    }
-
-    private fun setVisibility(clicked: Boolean) {
-        mBinding.apply {
-            if(!clicked){
-                point.visibility = View.VISIBLE
-                line.visibility = View.VISIBLE
-                circle.visibility = View.VISIBLE
-                polygon.visibility = View.VISIBLE
-                save.visibility = View.VISIBLE
-                load.visibility = View.VISIBLE
-            } else {
-                point.visibility = View.INVISIBLE
-                line.visibility = View.INVISIBLE
-                circle.visibility = View.INVISIBLE
-                polygon.visibility = View.INVISIBLE
-                save.visibility = View.INVISIBLE
-            }
-        }
-    }
-
-    private fun setAnimation(clicked: Boolean) {
-        mBinding.apply {
-            if(!clicked){
-                point.startAnimation(fromBottom)
-                line.startAnimation(fromBottom)
-                circle.startAnimation(fromBottom)
-                polygon.startAnimation(fromBottom)
-                save.startAnimation(fromBottom)
-                load.startAnimation(fromBottom)
-                add.startAnimation(rotateOpen)
-            } else {
-                point.startAnimation(toBottom)
-                line.startAnimation(toBottom)
-                circle.startAnimation(toBottom)
-                polygon.startAnimation(toBottom)
-                save.startAnimation(toBottom)
-                load.startAnimation(toBottom)
-                add.startAnimation(rotateClose)
-            }
-        }
-    }
-
-    private fun setClickable(clicked: Boolean) {
-        mBinding.apply {
-            if (clicked) {
-                point.isClickable = false
-                line.isClickable = false
-                circle.isClickable = false
-                polygon.isClickable = false
-                save.isClickable = false
-                load.isClickable = false
-            } else {
-                point.isClickable = true
-                line.isClickable = true
-                circle.isClickable = true
-                polygon.isClickable = true
-                save.isClickable = true
-                load.isClickable = true
-            }
-        }
     }
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -463,23 +378,26 @@ class MapActivity : AppCompatActivity() {
 
     private fun setupMapInteractions() {
         mapView.gestures.addOnMapClickListener { point ->
-            if (isLineMode) {
-                viewModel.addPointForLine(point.latitude(), point.longitude())
-            } else {
-                viewModel.addMarker(point.latitude(), point.longitude())
-            }
-            val activeLayer = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
-            val sourceId = "${activeLayer.id}-source"
-            mapView.getMapboxMap().getStyle { style ->
-                style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
-                    FeatureCollection.fromFeatures(activeLayer.markerFeatures)
-                )
+            if (isEditing) {
+                val activeLayer = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
+                if (isLineMode && activeLayer.type == LayerType.LINE) {
+                    viewModel.addPointForLine(point.latitude(), point.longitude())
+                } else if (activeLayer.type == LayerType.POINT) {
+                    viewModel.addMarker(point.latitude(), point.longitude())
+                }
+
+                val sourceId = "${activeLayer.id}-source"
+                mapView.getMapboxMap().getStyle { style ->
+                    style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
+                        FeatureCollection.fromFeatures(activeLayer.markerFeatures)
+                    )
+                }
             }
             true
         }
 
         mapView.gestures.addOnMapLongClickListener { point ->
-            if (isButtonPressed) {
+            if (isEditing && isButtonPressed) {
                 viewModel.deleteMarker(point.latitude(), point.longitude())
                 val activeLayer = viewModel.mapState.value.activeLayer
                 if (activeLayer != null && activeLayer.type == LayerType.POINT) {
@@ -536,4 +454,40 @@ class MapActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .show()
     }
+
+    private fun showEditLayerDialog() {
+        val layerNames = viewModel.mapState.value.layers.keys.toList()
+
+        if (layerNames.isEmpty()) {
+            Toast.makeText(this, "No layers exist to edit", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Select a layer to edit")
+            .setItems(layerNames.toTypedArray()) { dialog, which ->
+                val selectedLayerId = layerNames[which]
+                val selectedLayer = viewModel.mapState.value.layers[selectedLayerId]
+
+                if (selectedLayer != null) {
+                    selectedLayer.isVisible = true
+
+                    viewModel.setActiveLayer(selectedLayer)
+                    isLineMode = (selectedLayer.type == LayerType.LINE)
+                    isEditing = true
+
+                    mapView.getMapboxMap().getStyle { style ->
+                        when (selectedLayer.type) {
+                            LayerType.POINT -> viewModel.addPointLayerToStyle(selectedLayer, style)
+                            LayerType.LINE  -> viewModel.addLineLayerToStyle(selectedLayer, style)
+                            else -> {}
+                        }
+                    }
+
+                    Toast.makeText(this, "Editing layer: $selectedLayerId", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
 }
