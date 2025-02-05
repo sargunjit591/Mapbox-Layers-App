@@ -132,13 +132,6 @@ class MapActivity : AppCompatActivity() {
                 ) {
                     val selectedStyle = spinnerList[position].second
                     mapView.getMapboxMap().loadStyleUri(selectedStyle) { style ->
-                        mapState.value.layers.values.forEach { layer ->
-                            if (layer.type == LayerType.POINT) {
-                                addPointLayerToStyle(layer, style)
-                            }
-                        }
-                        setupMapInteractions()
-                        setupLineLayer(style)
 
                         val drawable = ContextCompat.getDrawable(
                             this@MapActivity,
@@ -155,6 +148,16 @@ class MapActivity : AppCompatActivity() {
                             drawable.draw(canvas)
                             style.addImage("ic_point2", bitmap)
                         }
+
+                        mapState.value.layers.values.forEach { layer ->
+                            if (layer.type == LayerType.POINT) {
+                                addPointLayerToStyle(layer, style)
+                            } else if (layer.type == LayerType.LINE) {
+                                addLineLayerToStyle(layer, style)
+                            }
+                        }
+
+                        setupMapInteractions()
                     }
                     updateStyle(selectedStyle)
                 }
@@ -418,19 +421,23 @@ class MapActivity : AppCompatActivity() {
 
     private fun setupMapInteractions() {
         mapView.gestures.addOnMapClickListener { point ->
-                if (isLineMode) {
-                    viewModel.addPointForLine(point.latitude(), point.longitude())
-                } else {
-                    viewModel.addMarker(point.latitude(), point.longitude())
-                }
-            val active = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
-            val sourceId = "${active.id}-source"
-            mapView.getMapboxMap().getStyle { style ->
-                val src = style.getSourceAs<GeoJsonSource>(sourceId)
-                src?.featureCollection(FeatureCollection.fromFeatures(active.markerFeatures))
+            if (isLineMode) {
+                viewModel.addPointForLine(point.latitude(), point.longitude())
+            } else {
+                viewModel.addMarker(point.latitude(), point.longitude())
             }
+
+            val activeLayer = viewModel.mapState.value.activeLayer ?: return@addOnMapClickListener true
+            val sourceId = "${activeLayer.id}-source"
+            mapView.getMapboxMap().getStyle { style ->
+                style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
+                    FeatureCollection.fromFeatures(activeLayer.markerFeatures)
+                )
+            }
+
             true
         }
+
         mapView.gestures.addOnMapLongClickListener { point ->
             if (isButtonPressed) {
                 viewModel.deleteMarker(point.latitude(), point.longitude())
@@ -438,9 +445,8 @@ class MapActivity : AppCompatActivity() {
                 if (activeLayer != null && activeLayer.type == LayerType.POINT) {
                     mapView.getMapboxMap().getStyle { style ->
                         val sourceId = "${activeLayer.id}-source"
-                        val source = style.getSourceAs<GeoJsonSource>(sourceId)
-                        source?.featureCollection(
-                            FeatureCollection.fromFeatures(activeLayer.markerFeatures.toTypedArray())
+                        style.getSourceAs<GeoJsonSource>(sourceId)?.featureCollection(
+                            FeatureCollection.fromFeatures(activeLayer.markerFeatures)
                         )
                     }
                 }
@@ -470,10 +476,19 @@ class MapActivity : AppCompatActivity() {
                 mapView.getMapboxMap().getStyle { style ->
                     for ((layerId, layer) in viewModel.mapState.value.layers) {
                         if (layer.isVisible) {
-                            viewModel.addPointLayerToStyle(layer, style)
-                            style.getLayer("${layerId}-symbol-layer")?.visibility(Visibility.VISIBLE)
+                            if (layer.type == LayerType.POINT) {
+                                viewModel.addPointLayerToStyle(layer, style)
+                            } else if (layer.type == LayerType.LINE) {
+                                viewModel.addLineLayerToStyle(layer, style)
+                            }
                         } else {
-                            style.getLayer("${layerId}-symbol-layer")?.visibility(Visibility.NONE)
+                            if (layer.type == LayerType.POINT) {
+                                style.getLayer("${layerId}-symbol-layer")
+                                    ?.visibility(Visibility.NONE)
+                            } else if (layer.type == LayerType.LINE) {
+                                style.getLayer("${layerId}-line-layer")
+                                    ?.visibility(Visibility.NONE)
+                            }
                         }
                     }
                 }
