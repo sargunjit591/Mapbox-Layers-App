@@ -16,7 +16,6 @@ data class MapLayer(val type: LayerType, val color: Int,
 enum class LayerType {
     POINT,
     LINE,
-    CIRCLE,
     POLYGON
 }
 

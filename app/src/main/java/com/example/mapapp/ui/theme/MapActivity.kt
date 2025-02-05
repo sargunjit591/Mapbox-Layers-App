@@ -151,10 +151,9 @@ class MapActivity : AppCompatActivity() {
         arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = arrayAdapter
 
-        mBinding.apply {
-            btnSelectLayers.setOnClickListener {
-                showLayerSelectionDialog()
-            }
+
+        mBinding.btnSelectLayers.setOnClickListener {
+            showLayerSelectionDialog()
         }
 
         viewModel.apply {
@@ -489,5 +488,4 @@ class MapActivity : AppCompatActivity() {
             }
             .show()
     }
-
 }

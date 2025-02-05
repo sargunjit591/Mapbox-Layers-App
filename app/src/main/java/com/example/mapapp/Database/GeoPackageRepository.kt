@@ -136,7 +136,6 @@ class GeoPackageRepository(private val context: Context) {
                 geometryType = when(layer.type){
                     LayerType.POINT ->GeometryType.POINT
                     LayerType.LINE -> GeometryType.LINESTRING
-                    LayerType.CIRCLE -> GeometryType.CIRCULARSTRING
                     LayerType.POLYGON -> GeometryType.POLYGON
                 }
 
