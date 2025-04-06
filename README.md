@@ -52,7 +52,7 @@ Additional technical aspects include:
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/sargunjit591/AdvancedSurveyorMappingApp.git
+   git clone https://github.com/sargunjit591/Mapbox-Layers-App
    
 2. **Open in Android Studio:**
 
