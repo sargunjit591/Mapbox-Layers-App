@@ -24,7 +24,7 @@ Built on a clean MVVM framework, the application leverages dependency injection 
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/yourusername/AdvancedSurveyorMappingApp.git
+   git clone https://github.com/sargunjit591/AdvancedSurveyorMappingApp.git
    
 2. **Open in Android Studio:**
    Import the project and sync Gradle.
