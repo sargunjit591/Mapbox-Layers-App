@@ -7,7 +7,6 @@ data class MapState(
     val currentStyle: String = Style.MAPBOX_STREETS,
     val layers: MutableMap<String,MapLayer> = mutableMapOf(),
     val activeLayer : MapLayer? = null,
-    val lineSegments: List<Pair<Pair<Double, Double>, Pair<Double, Double>>> = emptyList()
 )
 
 data class MapLayer(val type: LayerType, val color: Int,

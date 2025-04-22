@@ -444,6 +444,8 @@ class MapActivity : AppCompatActivity() {
                                 style.getLayer("${layerId}-symbol-layer")
                                     ?.visibility(Visibility.NONE)
                           } else if (layer.type == LayerType.LINE) {
+                                style.getLayer("${layerId}-line-point-layer")
+                                    ?.visibility(Visibility.NONE)
                                 style.getLayer("${layerId}-line-layer")
                                     ?.visibility(Visibility.NONE)
                             }

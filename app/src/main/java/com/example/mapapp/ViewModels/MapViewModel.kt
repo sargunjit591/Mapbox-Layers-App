@@ -143,7 +143,7 @@ class MapViewModel(context: Context) : ViewModel() {
     fun addPointLayerToStyle(layer: MapLayer, style: Style) {
         val sourceId = "${layer.id}-source"
 
-        val geoJsonSource = if (style.getSource(sourceId) == null) {
+        if (style.getSource(sourceId) == null) {
             GeoJsonSource.Builder(sourceId)
                 .featureCollection(FeatureCollection.fromFeatures(layer.markerFeatures))
                 .build().also { style.addSource(it) }
@@ -197,7 +197,9 @@ class MapViewModel(context: Context) : ViewModel() {
 
         layer.markerFeatures.add(feature)
         viewModelScope.launch {
-            repo.saveLatLng(lat, lng, layer.id).collect()
+            repo.saveLatLng(lat, lng, layer.id).collect{
+
+            }
         }
     }
 
@@ -321,7 +323,7 @@ class MapViewModel(context: Context) : ViewModel() {
                 repo.saveLineSegment(
                     (oldLat to oldLng),
                     (lat to lng),
-                    layer.id
+                    (layer.id)
                 ).collect {}
             }
 
